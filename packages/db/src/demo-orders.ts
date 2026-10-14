@@ -47,7 +47,7 @@ function assertCustomerSubject(subject: string): void {
     subject.length < 1 ||
     subject.length > 255 ||
     subject.trim() !== subject ||
-    /[\\u0000-\\u001f\\u007f]/.test(subject)
+    /[\u0000-\u001f\u007f]/.test(subject)
   ) {
     throw new TypeError("Authenticated customer subject must be 1-255 printable characters");
   }
