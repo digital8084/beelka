@@ -1,0 +1,54 @@
+name: Beelka CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, "phase-1/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: beelka
+          POSTGRES_PASSWORD: beelka_test_only
+          POSTGRES_DB: beelka
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U beelka -d beelka"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      BEELKA_MODE: simulation
+      PAYMENT_GATEWAY_MODE: simulation
+      MMBC_LIVE_ENABLED: "false"
+      DATABASE_URL: postgresql://beelka:beelka_test_only@localhost:5432/beelka
+      DATABASE_SSL: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and API tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Apply PostgreSQL migrations
+        run: npm run db:migrate
+      - name: Verify migrations are immutable and idempotent
+        run: npm run db:migrate

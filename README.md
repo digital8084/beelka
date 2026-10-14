@@ -15,24 +15,24 @@ Beelka is a public-facing customer platform for flight, hotel, train, and PPOB s
 - [Roadmap and Release Gates](docs/ROADMAP.md)
 - [Acceptance Criteria](docs/ACCEPTANCE-CRITERIA.md)
 - [Decision Log](docs/DECISIONS.md)
+- [Project Status](docs/PROJECT-STATUS.md)
+- [Phase 1 Foundation](docs/PHASE-1-FOUNDATION.md)
 
-## Product scope
+## Suggested stack
 
-Public customer website (not a multi-agent marketplace for the first release), one server-side integration adapter per product family, durable order/payment/audit records, idempotent mutation endpoints, and manual-safe reconciliation for ambiguous provider outcomes.
+- Node.js 22+ with TypeScript
+- Public web UI: React/Next.js (planned; not yet implemented)
+- PostgreSQL as source of truth
+- Independent provider adapters: flight, hotel, rail, PPOB
+- Provider-neutral payment gateway interface; vendor selection is pending
+- Cloud deployment with managed PostgreSQL, HTTPS, managed secrets, backups, alerts and release gates
 
-## Suggested engineering baseline
+## Phase 1 API shell
 
-- Node.js LTS with TypeScript
-- React/Next.js customer UI and server-side API/BFF
-- PostgreSQL as the source of truth
-- Provider adapters: `flight`, `hotel`, `rail`, `ppob`
-- Payment gateway abstraction; select a provider after commercial and technical review
-- Cloud deployment with managed PostgreSQL, HTTPS, managed secrets, backups, alerts, and CI gates
+Install dependencies, configure local PostgreSQL using .env.example, then run: npm install; npm run db:migrate; npm run dev.
 
-## Non-goals for initial release
+Useful endpoints: GET /healthz, GET /readyz, GET /api/v1/meta/services. POST /api/v1/orders remains disabled.
 
-- Do not expose MMBC credentials to the browser.
-- Do not claim live availability, price, booking, or payment until verified against providers.
-- Do not treat any provider `result: ok` alone as proof of final fulfilment.
-- Do not automatically retry potentially chargeable mutations after an ambiguous timeout.
-- Do not mark this project production-ready until roadmap gates pass with evidence.
+## Initial scope and non-goals
+
+The first release targets public customers, not a multi-agent marketplace. Each provider integration is server-side and isolated. Do not expose MMBC credentials to the browser, claim simulated data is live, treat a supplier result of ok alone as final fulfillment, or automatically retry potentially chargeable mutations after ambiguous timeouts. The platform is not production-ready until all roadmap gates pass with evidence.
