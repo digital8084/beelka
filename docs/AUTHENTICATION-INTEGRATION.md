@@ -20,18 +20,11 @@ The subject must be a non-empty, bounded, printable string. It should be the pro
 
 ## Provider verification requirements
 
-Select an identity provider and use its maintained server-side SDK or documented middleware. Do not implement a custom JWT parser/signature verifier in this repository.
+The concrete adapter uses the supported Firebase Admin SDK `verifyIdToken(idToken, true)` method. It does not parse or verify JWT signatures itself. The SDK validates the token for the configured project, including signature, issuer/audience and expiry; the `true` flag also checks token revocation and disabled-user state.
 
-Before the adapter returns a principal, verify at minimum:
+Invalid, expired, revoked, or disabled-user credentials resolve to unauthenticated. A provider, ADC, or network failure is not converted into an authenticated principal: the API returns `503 AUTHENTICATION_PROVIDER_UNAVAILABLE`. No fallback to caller-supplied identity exists.
 
-1. Signature using the provider's approved keys/algorithm, including key rotation and key identifier handling.
-2. Exact issuer and the expected audience/client identifier.
-3. Expiration and not-before claims, plus any provider-specific nonce/state/PKCE checks appropriate to the sign-in flow.
-4. Session/token revocation and logout semantics to the level supported by the selected provider.
-5. Allowed authentication method and assurance level for the route, if the product requires them.
-6. Failure behavior: invalid/expired credentials resolve to unauthenticated; provider infrastructure failure remains an operational failure and never falls back to a caller-supplied subject.
-
-If authentication is cookie-based, additionally define Secure, HttpOnly, SameSite, domain/path, expiry/rotation, CSRF protection for unsafe methods, and reverse-proxy TLS behavior. If bearer-token based, do not store tokens in local storage where a safer provider-supported session design is available; never log credentials.
+The current adapter accepts bearer tokens only; it does not set or read browser session cookies. Never log ID tokens, place them in URLs, or persist them as ordinary application data.
 
 ## Configuration and client flow
 
@@ -67,4 +60,4 @@ Do not open customer routes or call this production authentication until all of 
 - Secrets stored server-side; no client-provided subject overrides; structured logs redact tokens and session data.
 - Customer privacy/retention policy, incident response, monitoring, and staging UAT approved.
 
-Until the chosen provider is wired, a successful API/CI run proves the fail-closed boundary and repository ownership logic—not the existence of a working login service.
+Until the configured project has passed staging verification, a successful API/CI run proves the adapter behavior under test doubles and repository ownership logic—not a working production login service. This implementation does not yet add a customer login UI, session cookie/CSRF layer, rate limiting, account recovery UX, or production release approval.
