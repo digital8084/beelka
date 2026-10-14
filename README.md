@@ -33,7 +33,7 @@ Beelka is a public-facing customer platform for flights, hotels, trains and PPOB
 
 1. Install Node.js 22+ and PostgreSQL 16.
 2. Copy `.env.example` to `.env`, set `DATABASE_URL` to a local test database, and set `BEELKA_DEMO_ORDERS_ENABLED=true` for local-only demo order testing.
-3. Run `npm install`.
+3. Run `npm ci` to install the exact dependency graph from `package-lock.json`.
 4. Run `npm run db:migrate`.
 5. Run `npm run dev`.
 6. Run `npm run typecheck`, `npm test`, and `npm run build`.
