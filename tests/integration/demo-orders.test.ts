@@ -137,8 +137,14 @@ function orderRequest(key: string, spec: MockOrderSpec, correlationId = randomUU
 }
 
 
-function quoteRequest(spec: MockOrderSpec, token: string, correlationId = randomUUID()): MockQuoteRequest {
+function quoteRequest(
+  spec: MockOrderSpec,
+  token: string,
+  customerSubject = "customer:test-one",
+  correlationId = randomUUID()
+): MockQuoteRequest {
   return {
+    customerSubject,
     requestHash: hashRequest({
       serviceType: spec.serviceType,
       productId: spec.productId,
@@ -150,8 +156,15 @@ function quoteRequest(spec: MockOrderSpec, token: string, correlationId = random
   };
 }
 
-function orderFromQuoteRequest(quoteId: string, token: string, key: string, correlationId = randomUUID()): MockOrderFromQuoteRequest {
+function orderFromQuoteRequest(
+  quoteId: string,
+  token: string,
+  key: string,
+  customerSubject = "customer:test-one",
+  correlationId = randomUUID()
+): MockOrderFromQuoteRequest {
   return {
+    customerSubject,
     quoteId,
     accessTokenHash: createHash("sha256").update(token, "utf8").digest("hex"),
     idempotencyKey: key,
@@ -174,7 +187,7 @@ test("mock order, snapshot, and audit trail persist without creating a payment",
     assert.equal(created.order.fulfillmentState, "NOT_STARTED");
     assert.equal(created.order.totalMinor, "750000");
 
-    const stored = await getMockOrder(pool, created.order.id);
+    const stored = await getMockOrder(pool, created.order.id, "beelka-mock-order:" + created.order.id);
     assert.deepEqual(stored, created.order);
 
     const paymentCount = await pool.query(
@@ -320,9 +333,9 @@ test("mock quote persists server-computed price and only the access-token digest
     assert.equal(stored.rows[0]?.quoted_amount_minor, "1500000");
     assert.notEqual(stored.rows[0]?.access_token_hash, token);
 
-    const authorized = await getMockQuote(pool, created.id, digest);
+    const authorized = await getMockQuote(pool, created.id, digest, "customer:test-one");
     assert.deepEqual(authorized, created);
-    const denied = await getMockQuote(pool, created.id, createHash("sha256").update("wrong-token").digest("hex"));
+    const denied = await getMockQuote(pool, created.id, createHash("sha256").update("wrong-token").digest("hex"), "customer:test-one");
     assert.equal(denied, null);
 
     const auditCount = await pool.query(
@@ -351,7 +364,8 @@ test("order is created from one persisted quote and replays idempotently after c
     const quoteAfter = await getMockQuote(
       pool,
       quote.id,
-      createHash("sha256").update(token, "utf8").digest("hex")
+      createHash("sha256").update(token, "utf8").digest("hex"),
+      "customer:test-one"
     );
     assert.equal(quoteAfter?.status, "CONSUMED");
 
@@ -386,7 +400,7 @@ test("wrong quote capability token cannot create an order or leave an idempotenc
     assert.equal(denied.kind, "quote_not_found");
 
     const claims = await pool.query(
-      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1'"
+      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope LIKE 'mock-order-from-quote:create:v1:%'"
     );
     assert.equal(claims.rows[0]?.count, 0);
   });
@@ -402,7 +416,7 @@ test("expired quote cannot create order and removes its pending idempotency clai
     );
 
     const digest = createHash("sha256").update(token, "utf8").digest("hex");
-    const expiredQuote = await getMockQuote(pool, quote.id, digest);
+    const expiredQuote = await getMockQuote(pool, quote.id, digest, "customer:test-one");
     assert.equal(expiredQuote?.status, "EXPIRED");
 
     const decision = await createMockOrderFromQuote(
@@ -412,7 +426,7 @@ test("expired quote cannot create order and removes its pending idempotency clai
     assert.equal(decision.kind, "quote_expired");
 
     const claims = await pool.query(
-      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1'"
+      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope LIKE 'mock-order-from-quote:create:v1:%'"
     );
     const orders = await pool.query("SELECT count(*)::int AS count FROM orders WHERE quote_id = $1", [quote.id]);
     assert.equal(claims.rows[0]?.count, 0);
@@ -433,7 +447,7 @@ test("concurrent confirmations cannot create more than one order from a quote", 
     assert.equal(decisions.filter((item) => item.kind === "quote_consumed").length, 1);
     const count = await pool.query("SELECT count(*)::int AS count FROM orders WHERE quote_id = $1", [quote.id]);
     const claims = await pool.query(
-      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1'"
+      "SELECT count(*)::int AS count FROM idempotency_keys WHERE scope LIKE 'mock-order-from-quote:create:v1:%'"
     );
     assert.equal(count.rows[0]?.count, 1);
     assert.equal(claims.rows[0]?.count, 1);
