@@ -131,7 +131,7 @@ async function requirePrincipal(
     principal.subject.length < 1 ||
     principal.subject.length > 255 ||
     principal.subject.trim() !== principal.subject ||
-    /[\\u0000-\\u001f\\u007f]/.test(principal.subject)
+    /[\u0000-\u001f\u007f]/.test(principal.subject)
   ) {
     throw new RequestInputError(401, "INVALID_AUTHENTICATION_CONTEXT", "Identitas terverifikasi tidak valid.");
   }
