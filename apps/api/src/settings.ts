@@ -7,6 +7,7 @@ export interface AppSettings {
   databaseUrl: string | undefined;
   databaseSsl: boolean;
   googleIdentityPlatformProjectId: string | undefined;
+  corsAllowedOrigins: string[];
 }
 
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings {
@@ -47,6 +48,31 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings 
   const databaseUrl = env.DATABASE_URL?.trim() || undefined;
   const googleIdentityPlatformProjectId =
     env.GOOGLE_CLOUD_PROJECT?.trim() || env.FIREBASE_PROJECT_ID?.trim() || undefined;
+  const corsAllowedOrigins = (env.BEELKA_CORS_ORIGINS ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (new Set(corsAllowedOrigins).size !== corsAllowedOrigins.length) {
+    throw new Error("BEELKA_CORS_ORIGINS must not contain duplicate origins");
+  }
+  for (const origin of corsAllowedOrigins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error("BEELKA_CORS_ORIGINS must contain exact HTTP(S) origins");
+    }
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.origin !== origin ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      origin.includes("*")
+    ) {
+      throw new Error("BEELKA_CORS_ORIGINS must contain exact HTTP(S) origins without paths or wildcards");
+    }
+  }
 
   return {
     port,
@@ -56,6 +82,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings 
     demoOrdersEnabled,
     databaseUrl,
     databaseSsl: databaseSslValue === "true",
-    googleIdentityPlatformProjectId
+    googleIdentityPlatformProjectId,
+    corsAllowedOrigins
   };
 }
