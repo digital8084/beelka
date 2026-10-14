@@ -24,11 +24,11 @@ async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T
   }
 
   const adminPool = new Pool({ connectionString: adminDatabaseUrl });
+  const schema = "beelka_mock_test_" + randomUUID().replace(/-/g, "");
   const migrationPool = new Pool({
     connectionString: migrationDatabaseUrl,
     options: "-c application_name=beelka_migration_test -c search_path=" + schema
   });
-  const schema = "beelka_mock_test_" + randomUUID().replace(/-/g, "");
   const pool = new Pool({
     connectionString: databaseUrl,
     options: "-c application_name=beelka_runtime_test -c search_path=" + schema
@@ -83,8 +83,21 @@ async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T
           throw error;
         }
       }
+      const migrationProbe = await client.query<{ current_schema: string; has_customers: boolean }>(
+        "SELECT current_schema() AS current_schema, to_regclass('customers') IS NOT NULL AS has_customers"
+      );
+      if (migrationProbe.rows[0]?.current_schema !== schema || migrationProbe.rows[0]?.has_customers !== true) {
+        throw new Error("Migration role did not create the canonical schema tables: " + JSON.stringify(migrationProbe.rows[0]));
+      }
     } finally {
       client.release();
+    }
+
+    const runtimeProbe = await pool.query<{ current_user: string; current_schema: string; search_path: string; has_customers: boolean }>(
+      "SELECT current_user, current_schema() AS current_schema, current_setting('search_path') AS search_path, to_regclass('customers') IS NOT NULL AS has_customers"
+    );
+    if (runtimeProbe.rows[0]?.current_schema !== schema || runtimeProbe.rows[0]?.has_customers !== true) {
+      throw new Error("Runtime role cannot resolve its isolated schema: " + JSON.stringify(runtimeProbe.rows[0]));
     }
 
     return await run(pool);
