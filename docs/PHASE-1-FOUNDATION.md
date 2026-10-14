@@ -1,6 +1,6 @@
 # Phase 1 — Canonical Foundation
 
-Status: the mock API foundation, reproducible dependency installation, dependency audit and CodeQL workflow are merged on main. Dedicated PostgreSQL runtime-role enforcement is proposed in the current hardening PR and must pass PostgreSQL integration CI before Phase 1 can be declared complete.
+Status: the mock API foundation, reproducible installation, PostgreSQL runtime-role enforcement, dependency audit, CodeQL, and TruffleHog secret-scan workflow are merged on main. Authenticated owner-scoped repository logic and a fail-closed API authenticator boundary are in the current PR. A concrete identity provider is intentionally not wired yet; production authentication is not complete.
 
 ## Implemented on main
 
@@ -28,16 +28,17 @@ Status: the mock API foundation, reproducible dependency installation, dependenc
 - Every returned item is marked mock and not bookable/purchasable.
 - Quote creation commits the quote, synthetic owner, hashed access-token digest, and audit event in one PostgreSQL transaction.
 - Quote confirmation commits quote consumption, order item, order/audit events and completed idempotency response atomically.
-- The audit administration endpoint is not exposed until authentication/authorization is implemented.
+- The `Authenticator` injection boundary is fail-closed and does not trust caller-supplied identity headers; `main.ts` has no concrete provider adapter, so quote/order routes currently return `AUTHENTICATION_NOT_CONFIGURED`.
+- The audit administration endpoint remains unexposed until admin authorization is implemented.
 - No MMBC call, payment gateway request, booking, issue, token purchase or real debit occurs.
 
 ## Remaining Phase 1 gates
 
-1. **Migration/runtime role separation:** run migrations with a dedicated owner role; run application queries as a non-superuser runtime role that cannot modify append-only events or migration history.
-2. Complete runtime privilege integration tests and keep schema/table ownership separate from the API role.
-3. Define an owner and remediation runbook for dependency, CodeQL, and secret-scan findings; scanning is automated, but no scan can prove credentials were never exposed. Rotate any credential that is found.
-4. Complete final database constraints/repository integration tests and evidence retention.
-5. Do not declare Phase 1 fully green until all gates pass or a risk record explicitly accepts any exception.
+1. **Production database cutover:** document ownership of an existing database, prove backup/restore, provision separate `beelka_migrator` and `beelka_runtime` identities, and verify grants on the actual target environment. CI proves a fresh-database role contract, not an existing-database ownership transfer.
+2. Select a customer identity provider and wire its maintained server-side adapter; verify signature/session, issuer/audience, expiry/revocation behavior and logout without implementing a custom JWT verifier.
+3. Assign operational owners and remediation SLAs for dependency, CodeQL and secret-scan alerts; automated scans do not prove credentials were never exposed.
+4. Complete final database constraints/repository integration tests, rate limiting, backup/restore evidence and operational alerting.
+5. Do not declare production readiness until identity, authorization, deployment, privacy, reconciliation and UAT gates have evidence or a formally accepted risk record.
 
 ## Local setup
 
