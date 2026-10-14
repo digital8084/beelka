@@ -2,8 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type {
   MockOrderDecision,
+  MockOrderFromQuoteRequest,
   MockOrderRequest,
-  MockOrderResponse
+  MockOrderResponse,
+  MockQuoteRequest,
+  MockQuoteResponse,
+  MockQuoteStatus
 } from "../../domain/src/mock-orders.js";
 
 interface StoredIdempotencyRow {
@@ -21,6 +25,7 @@ interface CreatedOrderRow {
 interface OrderReadRow {
   id: string;
   public_order_number: string;
+  quote_id: string;
   service_type: "flight" | "hotel" | "rail" | "ppob";
   status: "QUOTED";
   currency: string;
@@ -251,6 +256,7 @@ export async function createMockOrder(
       publicOrderNumber,
       serviceType: input.spec.serviceType,
       productId: input.spec.productId,
+      quoteId,
       productName: input.spec.productName,
       status: "QUOTED",
       currency: "IDR",
@@ -297,7 +303,7 @@ export async function createMockOrder(
 
 export async function getMockOrder(pool: Pool, orderId: string): Promise<MockOrderResponse | null> {
   const result = await pool.query<OrderReadRow>(
-    `SELECT o.id, o.public_order_number, o.service_type, o.status, o.currency,
+    `SELECT o.id, o.public_order_number, o.quote_id, o.service_type, o.status, o.currency,
             o.subtotal_minor, o.fees_minor, o.discount_minor, o.total_minor,
             o.version, o.created_at, i.product_code, i.description_snapshot,
             q.terms_snapshot
@@ -319,6 +325,7 @@ export async function getMockOrder(pool: Pool, orderId: string): Promise<MockOrd
   return {
     id: row.id,
     publicOrderNumber: row.public_order_number,
+    quoteId: row.quote_id,
     serviceType: row.service_type,
     productId: row.product_code,
     productName: row.description_snapshot,
