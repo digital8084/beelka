@@ -31,7 +31,10 @@ jobs:
       BEELKA_MODE: simulation
       PAYMENT_GATEWAY_MODE: simulation
       MMBC_LIVE_ENABLED: "false"
-      DATABASE_URL: postgresql://beelka:beelka_test_only@localhost:5432/beelka
+      CI_ADMIN_DATABASE_URL: postgresql://beelka:beelka_test_only@localhost:5432/beelka
+      MIGRATION_DATABASE_URL: postgresql://beelka_migrator:migrator_test_only@localhost:5432/beelka
+      MIGRATION_DATABASE_SSL: "false"
+      DATABASE_URL: postgresql://beelka_runtime:runtime_test_only@localhost:5432/beelka
       DATABASE_SSL: "false"
     steps:
       - name: Checkout
@@ -43,13 +46,28 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci --no-audit --no-fund
+      - name: Provision least-privilege PostgreSQL roles
+        run: |
+          psql "$CI_ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE beelka_migrator
+            LOGIN PASSWORD 'migrator_test_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE ROLE beelka_runtime
+            LOGIN PASSWORD 'runtime_test_only'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          GRANT CONNECT ON DATABASE beelka TO beelka_migrator, beelka_runtime;
+          GRANT USAGE, CREATE ON SCHEMA public TO beelka_migrator;
+          GRANT USAGE ON SCHEMA public TO beelka_runtime;
+          ALTER DEFAULT PRIVILEGES FOR ROLE beelka_migrator IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO beelka_runtime;
+          SQL
+      - name: Apply PostgreSQL migrations as migration role
+        run: npm run db:migrate
+      - name: Unit, API and PostgreSQL integration tests as runtime role
+        run: npm test
       - name: Typecheck
         run: npm run typecheck
-      - name: Apply PostgreSQL migrations
-        run: npm run db:migrate
-      - name: Unit, API and PostgreSQL integration tests
-        run: npm test
       - name: Build
         run: npm run build
-      - name: Verify migrations are immutable and idempotent
+      - name: Verify migrations are immutable and idempotent as migration role
         run: npm run db:migrate

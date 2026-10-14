@@ -12,54 +12,96 @@ import {
 } from "../../packages/db/src/orders.js";
 
 const databaseUrl = process.env.DATABASE_URL;
+const migrationDatabaseUrl = process.env.MIGRATION_DATABASE_URL?.trim() || databaseUrl;
+const adminDatabaseUrl = process.env.CI_ADMIN_DATABASE_URL?.trim() || migrationDatabaseUrl;
 const options = { skip: !databaseUrl ? "DATABASE_URL is not set; PostgreSQL integration test skipped" : false };
 
 async function withIsolatedPool<T>(run: (pool: Pool) => Promise<T>): Promise<T> {
-  if (!databaseUrl) {
-    throw new Error("DATABASE_URL is required for this test");
+  if (!databaseUrl || !migrationDatabaseUrl || !adminDatabaseUrl) {
+    throw new Error("DATABASE_URL and migration/admin URLs are required for this test");
   }
 
-  const adminPool = new Pool({ connectionString: databaseUrl });
+  const adminPool = new Pool({ connectionString: adminDatabaseUrl });
+  const migrationPool = new Pool({ connectionString: migrationDatabaseUrl });
   const schema = "beelka_test_" + randomUUID().replace(/-/g, "");
-  await adminPool.query('CREATE SCHEMA "' + schema + '"');
   const pool = new Pool({
     connectionString: databaseUrl,
     options: "-c search_path=" + schema
   });
+  let schemaCreated = false;
 
   try {
-    await pool.query(`CREATE TABLE schema_migrations (
-      version TEXT PRIMARY KEY,
-      checksum CHAR(64) NOT NULL,
-      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )`);
+    const roles = await adminPool.query<{ migrator: string | null; runtime: string | null }>(
+      "SELECT to_regrole('beelka_migrator') AS migrator, to_regrole('beelka_runtime') AS runtime"
+    );
+    const hasSeparatedRoles = Boolean(roles.rows[0]?.migrator && roles.rows[0]?.runtime);
 
-    const migrationDirectory = path.resolve(process.cwd(), "migrations");
-    const migrations = (await readdir(migrationDirectory))
-      .filter((name) => /^\d{4,}_[a-z0-9_]+\.sql$/.test(name))
-      .sort();
+    if (hasSeparatedRoles) {
+      await adminPool.query('CREATE SCHEMA "' + schema + '" AUTHORIZATION beelka_migrator');
+      await adminPool.query('GRANT USAGE ON SCHEMA "' + schema + '" TO beelka_runtime');
+      await adminPool.query(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE beelka_migrator IN SCHEMA "' + schema +
+        '" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO beelka_runtime'
+      );
+    } else {
+      await adminPool.query('CREATE SCHEMA "' + schema + '"');
+    }
+    schemaCreated = true;
 
-    for (const name of migrations) {
-      const sql = await readFile(path.join(migrationDirectory, name), "utf8");
-      const checksum = createHash("sha256").update(sql, "utf8").digest("hex");
-      await pool.query("BEGIN");
-      try {
-        await pool.query(sql);
-        await pool.query(
-          "INSERT INTO schema_migrations(version, checksum) VALUES ($1, $2)",
-          [name, checksum]
-        );
-        await pool.query("COMMIT");
-      } catch (error) {
-        await pool.query("ROLLBACK");
-        throw error;
+    const client = await migrationPool.connect();
+    try {
+      await client.query("SET search_path TO " + schema);
+      await client.query(`CREATE TABLE schema_migrations (
+        version TEXT PRIMARY KEY,
+        checksum CHAR(64) NOT NULL,
+        applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )`);
+
+      const migrationDirectory = path.resolve(process.cwd(), "migrations");
+      const migrations = (await readdir(migrationDirectory))
+        .filter((name) => /^\d{4,}_[a-z0-9_]+\.sql$/.test(name))
+        .sort();
+
+      for (const name of migrations) {
+        const sql = await readFile(path.join(migrationDirectory, name), "utf8");
+        const checksum = createHash("sha256").update(sql, "utf8").digest("hex");
+        await client.query("BEGIN");
+        try {
+          await client.query(sql);
+          await client.query(
+            "INSERT INTO schema_migrations(version, checksum) VALUES ($1, $2)",
+            [name, checksum]
+          );
+          await client.query("COMMIT");
+        } catch (error) {
+          await client.query("ROLLBACK");
+          throw error;
+        }
       }
+      const migrationProbe = await client.query<{ current_schema: string; has_customers: boolean }>(
+        "SELECT current_schema() AS current_schema, to_regclass('customers') IS NOT NULL AS has_customers"
+      );
+      if (migrationProbe.rows[0]?.current_schema !== schema || migrationProbe.rows[0]?.has_customers !== true) {
+        throw new Error("Migration role did not create the canonical schema tables: " + JSON.stringify(migrationProbe.rows[0]));
+      }
+    } finally {
+      client.release();
+    }
+
+    const runtimeProbe = await pool.query<{ current_user: string; current_schema: string; search_path: string; has_customers: boolean }>(
+      "SELECT current_user, current_schema() AS current_schema, current_setting('search_path') AS search_path, to_regclass('customers') IS NOT NULL AS has_customers"
+    );
+    if (runtimeProbe.rows[0]?.current_schema !== schema || runtimeProbe.rows[0]?.has_customers !== true) {
+      throw new Error("Runtime role cannot resolve its isolated schema: " + JSON.stringify(runtimeProbe.rows[0]));
     }
 
     return await run(pool);
   } finally {
     await pool.end();
-    await adminPool.query('DROP SCHEMA "' + schema + '" CASCADE');
+    await migrationPool.end();
+    if (schemaCreated) {
+      await adminPool.query('DROP SCHEMA "' + schema + '" CASCADE');
+    }
     await adminPool.end();
   }
 }
