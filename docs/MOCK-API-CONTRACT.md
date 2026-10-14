@@ -26,7 +26,9 @@ Status: initial server/API scaffold. All search and order examples below are fix
 | POST | `/api/v1/flights/search` | Mock flight result; no booking |
 | POST | `/api/v1/hotels/search` | Mock hotel result; no booking |
 | POST | `/api/v1/trains/search` | Mock train result; no booking |
-| GET | `/api/v1/ppob/products` | Mock PPOB catalog; no purchase |\n| POST | `/api/v1/quotes` | Persist a server-priced 15-minute mock quote; returns a one-time access token |\n| GET | `/api/v1/quotes/:id` | Read a quote using the matching `X-Quote-Token` bearer token |
+| GET | `/api/v1/ppob/products` | Mock PPOB catalog; no purchase |
+| POST | `/api/v1/quotes` | Persist a server-priced 15-minute mock quote; returns a one-time access token |
+| GET | `/api/v1/quotes/:id` | Read a quote using the matching `X-Quote-Token` bearer token |
 | POST | `/api/v1/orders` | Idempotent demo order in PostgreSQL; no payment/fulfillment |
 | GET | `/api/v1/orders/:id` | Read a simulated order by UUID when demo orders are enabled |
 | GET | `/api/v1/admin/audit-events` | Not exposed; returns 404 until authentication/authorization is implemented |
