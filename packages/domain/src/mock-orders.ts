@@ -17,12 +17,50 @@ export interface MockOrderRequest {
   spec: MockOrderSpec;
 }
 
+export type MockQuoteStatus = "ACTIVE" | "EXPIRED" | "CONSUMED";
+
+export interface MockQuoteResponse {
+  id: string;
+  serviceType: ServiceType;
+  productId: string;
+  productName: string;
+  status: MockQuoteStatus;
+  currency: "IDR";
+  subtotalMinor: string;
+  feesMinor: "0";
+  discountMinor: "0";
+  totalMinor: string;
+  mode: "mock";
+  bookable: false;
+  purchasable: false;
+  selection: Record<string, string | number>;
+  terms: Record<string, unknown>;
+  quotedAt: string;
+  expiresAt: string;
+}
+
+export interface MockQuoteRequest {
+  requestHash: string;
+  accessTokenHash: string;
+  correlationId: string;
+  spec: MockOrderSpec;
+}
+
+export interface MockOrderFromQuoteRequest {
+  quoteId: string;
+  accessTokenHash: string;
+  idempotencyKey: string;
+  requestHash: string;
+  correlationId: string;
+}
+
 export interface MockOrderResponse {
   id: string;
   publicOrderNumber: string;
   serviceType: ServiceType;
   productId: string;
   productName: string;
+  quoteId: string;
   status: "QUOTED";
   currency: "IDR";
   subtotalMinor: string;
@@ -45,9 +83,14 @@ export type MockOrderDecision =
   | { kind: "replay"; statusCode: 201; order: MockOrderResponse }
   | { kind: "conflict" }
   | { kind: "in_progress" }
-  | { kind: "expired" };
+  | { kind: "expired" }
+  | { kind: "quote_not_found" }
+  | { kind: "quote_expired" }
+  | { kind: "quote_consumed" };
 
 export interface MockOrderStore {
-  create(input: MockOrderRequest): Promise<MockOrderDecision>;
+  createQuote(input: MockQuoteRequest): Promise<MockQuoteResponse>;
+  getQuote(quoteId: string, accessTokenHash: string): Promise<MockQuoteResponse | null>;
+  createFromQuote(input: MockOrderFromQuoteRequest): Promise<MockOrderDecision>;
   get(orderId: string): Promise<MockOrderResponse | null>;
 }
