@@ -63,12 +63,12 @@ For every capability, keep request/response fixtures that are redacted and tagge
 
 ## Priority P1 — Security and operations
 
-1. Add customer identity/session authorization before the public website can read or mutate real orders.
+1. Select an identity provider and wire its maintained server-side session/JWT adapter into `main.ts`. The route-level `Authenticator` boundary now fails closed; a concrete login service is not implemented.
 2. Keep the admin audit API absent until role-based access, actor attribution, pagination, filtering and PII redaction are implemented.
-3. Create separate PostgreSQL migration-owner and runtime roles. Append-only triggers are defense in depth; the runtime role must not own event tables or be able to disable the triggers.
-4. Add rate limiting/abuse controls to search and mutation routes before cloud exposure.
+3. PostgreSQL migration/runtime role split is implemented and CI-tested; before production cutover, inventory existing object ownership and complete verified backup/restore evidence.
+4. Add rate limiting/abuse controls to search, identity, and quote/order mutation routes before cloud exposure.
 5. Add structured request completion logs with latency/status and correlation ID, while never logging body fields, passwords, session keys, passenger identifiers or payment tokens.
-6. Add secret scanning, dependency audit, reproducible lockfile/install, container scanning, backup/restore evidence and alerts.
+6. Automated secret scanning, dependency audit and reproducible lockfile/install are active; finish alert ownership, container scanning, backup/restore evidence and operational alerts.
 7. Define PII retention, deletion/anonymization and customer-data access policy before collecting live identity data.
 
 ## Priority P2 — Customer product and UX
@@ -87,7 +87,7 @@ For every capability, keep request/response fixtures that are redacted and tagge
 1. Merge and protect the mock API scaffold with green CI.
 2. Complete Phase 1 hygiene: reproducible lockfile, migration/runtime role split, security scanning and repository-layer tests.
 3. Extend persisted mock quote confirmation with authenticated customer ownership and provider-specific revalidation before enabling any live service.
-4. Add an authenticated customer identity boundary and customer-scoped order access.
+4. Choose and integrate the trusted identity provider, then verify customer-scoped quote/order access and session lifecycle in staging.
 5. Verify read-only MMBC capabilities, one product family at a time.
 6. Select a gateway; implement sandbox/webhook/reconciliation flow.
 7. Implement supplier mutations for one approved service at a time.

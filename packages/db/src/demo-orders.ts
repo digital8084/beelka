@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type {
   MockOrderDecision,
@@ -38,6 +38,37 @@ interface OrderReadRow {
   product_code: string;
   description_snapshot: string;
   terms_snapshot: unknown;
+}
+
+
+function assertCustomerSubject(subject: string): void {
+  if (
+    typeof subject !== "string" ||
+    subject.length < 1 ||
+    subject.length > 255 ||
+    subject.trim() !== subject ||
+    /[\u0000-\u001f\u007f]/.test(subject)
+  ) {
+    throw new TypeError("Authenticated customer subject must be 1-255 printable characters");
+  }
+}
+
+async function resolveCustomerId(client: PoolClient, subject: string): Promise<string> {
+  assertCustomerSubject(subject);
+  const result = await client.query<{ id: string }>(
+    "INSERT INTO customers (id, auth_subject) VALUES ($1, $2) " +
+    "ON CONFLICT (auth_subject) DO UPDATE SET updated_at = now() RETURNING id",
+    [randomUUID(), subject]
+  );
+  const row = result.rows[0];
+  if (!row) throw new Error("Could not resolve authenticated customer");
+  return row.id;
+}
+
+function customerOrderScope(subject: string): string {
+  assertCustomerSubject(subject);
+  const digest = createHash("sha256").update(subject, "utf8").digest("hex");
+  return "mock-order-from-quote:create:v1:" + digest;
 }
 
 function makePublicOrderNumber(): string {
@@ -389,14 +420,8 @@ export async function createMockQuote(
 
   return inTransaction(pool, async (client) => {
     const quoteId = randomUUID();
-    const customerId = randomUUID();
+    const customerId = await resolveCustomerId(client, input.customerSubject);
     const amount = BigInt(input.spec.amountMinor);
-
-    // Synthetic owner only; no email, phone, passenger data, or account credentials.
-    await client.query(
-      "INSERT INTO customers (id, auth_subject) VALUES ($1, $2)",
-      [customerId, "beelka-mock-quote:" + quoteId]
-    );
 
     await client.query(
       "INSERT INTO quotes " +
@@ -463,13 +488,17 @@ export async function createMockQuote(
 export async function getMockQuote(
   pool: Pool,
   quoteId: string,
-  accessTokenHash: string
+  accessTokenHash: string,
+  customerSubject: string
 ): Promise<MockQuoteResponse | null> {
   if (!/^[a-f0-9]{64}$/.test(accessTokenHash)) return null;
+  try { assertCustomerSubject(customerSubject); } catch { return null; }
   const result = await pool.query<PersistedMockQuoteRow>(
     "SELECT " + quoteReadColumns +
-    " FROM quotes WHERE id = $1 AND access_token_hash = $2 AND is_simulated = TRUE LIMIT 1",
-    [quoteId, accessTokenHash]
+    " FROM quotes WHERE id = $1 AND access_token_hash = $2 " +
+    "AND customer_id = (SELECT id FROM customers WHERE auth_subject = $3) " +
+    "AND is_simulated = TRUE LIMIT 1",
+    [quoteId, accessTokenHash, customerSubject]
   );
   const row = result.rows[0];
   return row ? asMockQuote(row) : null;
@@ -484,6 +513,7 @@ export async function createMockOrderFromQuote(
   pool: Pool,
   input: MockOrderFromQuoteRequest
 ): Promise<MockOrderDecision> {
+  assertCustomerSubject(input.customerSubject);
   if (!/^[a-f0-9]{64}$/.test(input.requestHash)) {
     throw new TypeError("requestHash must be a lowercase SHA-256 hex digest");
   }
@@ -505,26 +535,29 @@ export async function createMockOrderFromQuote(
   return inTransaction(pool, async (client) => {
     const quoteResult = await client.query<PersistedMockQuoteRow>(
       "SELECT " + quoteReadColumns +
-      " FROM quotes WHERE id = $1 AND access_token_hash = $2 AND is_simulated = TRUE FOR UPDATE",
-      [input.quoteId, input.accessTokenHash]
+      " FROM quotes WHERE id = $1 AND access_token_hash = $2 " +
+      "AND customer_id = (SELECT id FROM customers WHERE auth_subject = $3) " +
+      "AND is_simulated = TRUE FOR UPDATE",
+      [input.quoteId, input.accessTokenHash, input.customerSubject]
     );
     const quote = quoteResult.rows[0];
     if (!quote || !quote.customer_id || !quote.source_reference) return { kind: "quote_not_found" };
 
-    // Authentication via the one-time-returned bearer token precedes replay.
+    // Ownership is derived from the verified identity-provider subject and does not store it in the idempotency scope.
+    const scope = customerOrderScope(input.customerSubject);
     const claim = await client.query<{ id: string }>(
       "INSERT INTO idempotency_keys " +
       "(id, scope, idempotency_key, request_hash, expires_at, state) " +
-      "VALUES ($1, 'mock-order-from-quote:create:v1', $2, $3, now() + interval '24 hours', 'IN_PROGRESS') " +
+      "VALUES ($1, $2, $3, $4, now() + interval '24 hours', 'IN_PROGRESS') " +
       "ON CONFLICT (scope, idempotency_key) DO NOTHING RETURNING id",
-      [randomUUID(), input.idempotencyKey, input.requestHash]
+      [randomUUID(), scope, input.idempotencyKey, input.requestHash]
     );
 
     if (claim.rowCount !== 1) {
       const existingResult = await client.query<StoredIdempotencyRow>(
         "SELECT request_hash, state, response_status, safe_response, expires_at " +
-        "FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1' AND idempotency_key = $1 FOR UPDATE",
-        [input.idempotencyKey]
+        "FROM idempotency_keys WHERE scope = $1 AND idempotency_key = $2 FOR UPDATE",
+        [scope, input.idempotencyKey]
       );
       const existing = existingResult.rows[0];
       if (!existing) throw new Error("Idempotency claim disappeared during conflict handling");
@@ -538,9 +571,9 @@ export async function createMockOrderFromQuote(
 
     const removePendingClaim = async (): Promise<void> => {
       await client.query(
-        "DELETE FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1' " +
-        "AND idempotency_key = $1 AND state = 'IN_PROGRESS'",
-        [input.idempotencyKey]
+        "DELETE FROM idempotency_keys WHERE scope = $1 " +
+        "AND idempotency_key = $2 AND state = 'IN_PROGRESS'",
+        [scope, input.idempotencyKey]
       );
     };
     if (quote.consumed_at !== null) {
@@ -653,17 +686,22 @@ export async function createMockOrderFromQuote(
 
     const completed = await client.query(
       "UPDATE idempotency_keys SET state = 'COMPLETED', response_status = 201, " +
-      "safe_response = $3::jsonb, resource_type = 'mock_order', resource_id = $4 " +
-      "WHERE scope = 'mock-order-from-quote:create:v1' AND idempotency_key = $1 " +
-      "AND request_hash = $2 AND state = 'IN_PROGRESS'",
-      [input.idempotencyKey, input.requestHash, JSON.stringify(order), orderId]
+      "safe_response = $4::jsonb, resource_type = 'mock_order', resource_id = $5 " +
+      "WHERE scope = $1 AND idempotency_key = $2 " +
+      "AND request_hash = $3 AND state = 'IN_PROGRESS'",
+      [scope, input.idempotencyKey, input.requestHash, JSON.stringify(order), orderId]
     );
     if (completed.rowCount !== 1) throw new Error("Could not atomically complete idempotency record");
     return { kind: "created", statusCode: 201, order };
   });
 }
 
-export async function getMockOrder(pool: Pool, orderId: string): Promise<MockOrderResponse | null> {
+export async function getMockOrder(
+  pool: Pool,
+  orderId: string,
+  customerSubject: string
+): Promise<MockOrderResponse | null> {
+  try { assertCustomerSubject(customerSubject); } catch { return null; }
   const result = await pool.query<OrderReadRow>(
     `SELECT o.id, o.public_order_number, o.quote_id, o.service_type, o.status, o.currency,
             o.subtotal_minor, o.fees_minor, o.discount_minor, o.total_minor,
@@ -673,8 +711,9 @@ export async function getMockOrder(pool: Pool, orderId: string): Promise<MockOrd
        JOIN quotes q ON q.id = o.quote_id AND q.is_simulated = TRUE
        JOIN order_items i ON i.order_id = o.id
       WHERE o.id = $1
+        AND o.customer_id = (SELECT id FROM customers WHERE auth_subject = $2)
       LIMIT 1`,
-    [orderId]
+    [orderId, customerSubject]
   );
   const row = result.rows[0];
   if (!row) return null;

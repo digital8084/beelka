@@ -16,10 +16,19 @@ export interface DatabaseProbe {
   query(sql: string): Promise<unknown>;
 }
 
+export interface AuthenticatedPrincipal {
+  /** Opaque, verified subject from a trusted identity provider; never a request-supplied ID. */
+  subject: string;
+}
+
+export type Authenticator = (req: IncomingMessage) => Promise<AuthenticatedPrincipal | null>;
+
 export interface AppDependencies {
   database?: DatabaseProbe;
   mockOrderStore?: MockOrderStore;
   demoOrdersEnabled?: boolean;
+  /** Must validate a real session/JWT/cookie using an approved identity provider. No header fallback is implemented. */
+  authenticate?: Authenticator;
 }
 
 class RequestInputError extends Error {
@@ -105,11 +114,36 @@ function hashQuoteToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-function serviceMetadata(): Record<string, unknown> {
+async function requirePrincipal(
+  req: IncomingMessage,
+  dependencies: AppDependencies
+): Promise<AuthenticatedPrincipal> {
+  if (!dependencies.authenticate) {
+    throw new RequestInputError(503, "AUTHENTICATION_NOT_CONFIGURED", "Penyedia autentikasi belum dikonfigurasi; akses pelanggan ditutup.");
+  }
+
+  const principal = await dependencies.authenticate(req);
+  if (!principal) {
+    throw new RequestInputError(401, "AUTHENTICATION_REQUIRED", "Autentikasi pelanggan wajib untuk mengakses quote atau pesanan.");
+  }
+  if (
+    typeof principal.subject !== "string" ||
+    principal.subject.length < 1 ||
+    principal.subject.length > 255 ||
+    principal.subject.trim() !== principal.subject ||
+    /[\u0000-\u001f\u007f]/.test(principal.subject)
+  ) {
+    throw new RequestInputError(401, "INVALID_AUTHENTICATION_CONTEXT", "Identitas terverifikasi tidak valid.");
+  }
+  return principal;
+}
+
+function serviceMetadata(authenticationConfigured: boolean): Record<string, unknown> {
   return {
     mode: "mock",
     liveTransactionsEnabled: false,
     paymentGatewayMode: "disabled",
+    customerAuthenticationConfigured: authenticationConfigured,
     services: mockServiceModules
   };
 }
@@ -155,7 +189,7 @@ async function handleRequest(
   }
 
   if (method === "GET" && (path === "/api/v1" || path === "/api/v1/meta/services")) {
-    json(res, 200, { ...serviceMetadata(), requestId: correlationId });
+    json(res, 200, { ...serviceMetadata(Boolean(dependencies.authenticate)), requestId: correlationId });
     return;
   }
 
@@ -188,6 +222,7 @@ async function handleRequest(
       return;
     }
 
+    const principal = await requirePrincipal(req, dependencies);
     const body = await readJsonBody(req);
     const spec = resolveMockOrder(body);
     const accessToken = randomBytes(32).toString("base64url");
@@ -197,6 +232,7 @@ async function handleRequest(
       selection: spec.selection
     });
     const quote = await dependencies.mockOrderStore.createQuote({
+      customerSubject: principal.subject,
       requestHash,
       accessTokenHash: hashQuoteToken(accessToken),
       correlationId,
@@ -218,12 +254,17 @@ async function handleRequest(
       errorResponse(res, 503, "DATABASE_NOT_CONFIGURED", "Penyimpanan PostgreSQL diperlukan untuk membaca quote demo.", correlationId);
       return;
     }
+    const principal = await requirePrincipal(req, dependencies);
     const token = quoteAccessToken(req);
     if (!token) {
       errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
       return;
     }
-    const quote = await dependencies.mockOrderStore.getQuote(quoteMatch[1] ?? "", hashQuoteToken(token));
+    const quote = await dependencies.mockOrderStore.getQuote(
+      quoteMatch[1] ?? "",
+      hashQuoteToken(token),
+      principal.subject
+    );
     if (!quote) {
       errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
       return;
@@ -242,6 +283,7 @@ async function handleRequest(
       return;
     }
 
+    const principal = await requirePrincipal(req, dependencies);
     const header = req.headers["idempotency-key"];
     const key = Array.isArray(header) ? header[0] : header;
     if (!key) {
@@ -263,6 +305,7 @@ async function handleRequest(
     assertIdempotencyKey(key);
     const requestHash = hashRequest({ quoteId });
     const decision = await dependencies.mockOrderStore.createFromQuote({
+      customerSubject: principal.subject,
       quoteId,
       accessTokenHash: hashQuoteToken(token),
       idempotencyKey: key,
@@ -312,7 +355,8 @@ async function handleRequest(
       errorResponse(res, 503, "DATABASE_NOT_CONFIGURED", "Penyimpanan PostgreSQL diperlukan untuk membaca pesanan demo.", correlationId);
       return;
     }
-    const order = await dependencies.mockOrderStore.get(orderMatch[1] ?? "");
+    const principal = await requirePrincipal(req, dependencies);
+    const order = await dependencies.mockOrderStore.get(orderMatch[1] ?? "", principal.subject);
     if (!order) {
       errorResponse(res, 404, "NOT_FOUND", "Pesanan demo tidak ditemukan.", correlationId);
       return;

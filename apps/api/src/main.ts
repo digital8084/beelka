@@ -18,9 +18,9 @@ const dependencies = {
         database: pool,
         mockOrderStore: {
           createQuote: (input: Parameters<typeof createMockQuote>[1]) => createMockQuote(pool, input),
-          getQuote: (id: string, accessTokenHash: string) => getMockQuote(pool, id, accessTokenHash),
+          getQuote: (id: string, accessTokenHash: string, customerSubject: string) => getMockQuote(pool, id, accessTokenHash, customerSubject),
           createFromQuote: (input: Parameters<typeof createMockOrderFromQuote>[1]) => createMockOrderFromQuote(pool, input),
-          get: (id: string) => getMockOrder(pool, id)
+          get: (id: string, customerSubject: string) => getMockOrder(pool, id, customerSubject)
         }
       }
     : {}),

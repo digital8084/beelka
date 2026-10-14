@@ -54,6 +54,10 @@ const orderFixture: MockOrderResponse = {
   createdAt: "2026-10-14T00:00:00.000Z"
 };
 
+function testAuth(subject = "customer:api-test"): Pick<AppDependencies, "authenticate"> {
+  return { authenticate: async () => ({ subject }) };
+}
+
 function mockDatabase(): DatabaseProbe {
   return { query: async () => ({ rows: [{ "?column?": 1 }] }) };
 }
@@ -83,14 +87,91 @@ const quoteFixture: MockQuoteResponse = {
 
 function mockOrderStore(): MockOrderStore {
   return {
-    createQuote: async () => quoteFixture,
-    getQuote: async (id, tokenHash) => id === quoteFixture.id && tokenHash === quoteAccessTokenHash ? quoteFixture : null,
-    createFromQuote: async (input) => input.quoteId === quoteFixture.id && input.accessTokenHash === quoteAccessTokenHash
-      ? { kind: "created", statusCode: 201, order: orderFixture }
-      : { kind: "quote_not_found" },
-    get: async (id) => id === orderFixture.id ? orderFixture : null
+    createQuote: async (input) => input.customerSubject === "customer:api-test"
+      ? quoteFixture
+      : { ...quoteFixture, id: "30d87366-5307-4d23-9fd4-4e2a8d1ca417" },
+    getQuote: async (id, tokenHash, customerSubject) =>
+      id === quoteFixture.id && tokenHash === quoteAccessTokenHash && customerSubject === "customer:api-test"
+        ? quoteFixture
+        : null,
+    createFromQuote: async (input) =>
+      input.quoteId === quoteFixture.id &&
+      input.accessTokenHash === quoteAccessTokenHash &&
+      input.customerSubject === "customer:api-test"
+        ? { kind: "created", statusCode: 201, order: orderFixture }
+        : { kind: "quote_not_found" },
+    get: async (id, customerSubject) =>
+      id === orderFixture.id && customerSubject === "customer:api-test" ? orderFixture : null
   };
 }
+
+
+test("customer quote/order routes fail closed when no trusted authenticator is wired", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        serviceType: "flight",
+        productId: "flight-demo-001",
+        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" }
+      })
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 503);
+    assert.equal(body.error.code, "AUTHENTICATION_NOT_CONFIGURED");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true
+  });
+});
+
+test("trusted authenticator rejection returns 401 and does not accept caller-supplied identity headers", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/quotes", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-id": "customer:api-test"
+      },
+      body: JSON.stringify({
+        serviceType: "flight",
+        productId: "flight-demo-001",
+        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" }
+      })
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 401);
+    assert.equal(body.error.code, "AUTHENTICATION_REQUIRED");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true,
+    authenticate: async () => null
+  });
+});
+
+test("another authenticated subject cannot read a quote or order through API routes", async () => {
+  await withServer(async (baseUrl) => {
+    const quoteResponse = await fetch(baseUrl + "/api/v1/quotes/" + quoteFixture.id, {
+      headers: { "x-quote-token": quoteAccessToken }
+    });
+    const quoteBody = await quoteResponse.json() as { error: { code: string } };
+    assert.equal(quoteResponse.status, 404);
+    assert.equal(quoteBody.error.code, "QUOTE_NOT_FOUND");
+
+    const orderResponse = await fetch(baseUrl + "/api/v1/orders/" + orderFixture.id);
+    const orderBody = await orderResponse.json() as { error: { code: string } };
+    assert.equal(orderResponse.status, 404);
+    assert.equal(orderBody.error.code, "NOT_FOUND");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true,
+    ...testAuth("customer:other-user")
+  });
+});
 
 test("health endpoint reports process liveness", async () => {
   await withServer(async (baseUrl) => {
@@ -129,12 +210,14 @@ test("API root exposes modules and marks all provider adapters mock-only", async
       mode: string;
       liveTransactionsEnabled: boolean;
       paymentGatewayMode: string;
+      customerAuthenticationConfigured: boolean;
       services: Array<{ id: string; mode: string; liveEnabled: boolean }>;
     };
     assert.equal(response.status, 200);
     assert.equal(body.mode, "mock");
     assert.equal(body.liveTransactionsEnabled, false);
     assert.equal(body.paymentGatewayMode, "disabled");
+    assert.equal(body.customerAuthenticationConfigured, false);
     assert.deepEqual(body.services.map((item) => item.id), [
       "flights", "hotels", "trains", "ppob", "orders", "payments", "audit"
     ]);
@@ -238,7 +321,8 @@ test("quote creation returns a persisted mock quote and one-time bearer token", 
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -251,7 +335,8 @@ test("quote lookup requires the quote capability token", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -268,7 +353,8 @@ test("quote lookup succeeds only with the matching capability token", async () =
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -285,7 +371,8 @@ test("order creation requires a quote capability token", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -315,7 +402,8 @@ test("order creation requires idempotency even in mock mode", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -345,7 +433,8 @@ test("order creation confirms only a persisted quote and never trusts client pri
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -360,7 +449,8 @@ test("demo order lookup returns only the requested mock order", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 

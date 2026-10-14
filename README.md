@@ -14,6 +14,7 @@ Beelka is a public-facing customer platform for flights, hotels, trains and PPOB
 - [PostgreSQL Data Model](docs/DATA-MODEL.md)
 - [PostgreSQL Role Setup](docs/DATABASE-ROLE-SETUP.md)
 - [Security and Transaction Integrity](docs/SECURITY-TRANSACTIONS.md)
+- [Customer Authentication Integration](docs/AUTHENTICATION-INTEGRATION.md)
 - [Secret Scanning and Incident Response](docs/SECRET-SCANNING.md)
 - [UI/UX Blueprint](docs/UI-UX.md)
 - [Roadmap and Release Gates](docs/ROADMAP.md)
@@ -46,17 +47,17 @@ Do not enable unauthenticated demo order writes in production. Current configura
 
 - `GET /healthz` — process liveness.
 - `GET /readyz` — PostgreSQL readiness.
-- `GET /api/v1` — modules, mode and live-operation flags.
+- `GET /api/v1` — modules, mode, live-operation flags, and whether a trusted customer authenticator is wired.
 - `POST /api/v1/flights/search` — mock-only flight search.
 - `POST /api/v1/hotels/search` — mock-only hotel search.
 - `POST /api/v1/trains/search` — mock-only train search.
 - `GET /api/v1/ppob/products` — mock-only catalog.
 - `POST /api/v1/quotes` — persists a 15-minute mock quote and returns a one-time access token.
-- `GET /api/v1/quotes/:id` — reads that quote only with `X-Quote-Token`.
-- `POST /api/v1/orders` — confirms a persisted quote; requires `X-Quote-Token`, `Idempotency-Key`, and local demo-order enablement.
-- `GET /api/v1/orders/:id` — UUID-based lookup for simulated demo orders only.
+- `GET /api/v1/quotes/:id` — reads the quote with `X-Quote-Token` and the verified customer identity.
+- `POST /api/v1/orders` — confirms a persisted quote; requires a verified identity, `X-Quote-Token`, `Idempotency-Key`, and local demo-order enablement.
+- `GET /api/v1/orders/:id` — returns only the authenticated owner\u2019s simulated order.
 - `GET /api/v1/admin/audit-events` — deliberately not exposed before authentication and authorization exist.
 
 ## Safety and scope
 
-No customer authentication, public website UI, real payment gateway, MMBC live adapter or cloud deployment is claimed complete. Never expose provider credentials to the browser, represent fixtures as live data, infer payment success from a redirect, or automatically retry an ambiguous chargeable provider mutation. Production requires the roadmap gates and evidence.
+The trusted identity-provider adapter is not yet wired into `main.ts`; customer quote/order endpoints intentionally return `AUTHENTICATION_NOT_CONFIGURED` until that integration is implemented. No production login, public website UI, real payment gateway, MMBC live adapter or cloud deployment is claimed complete. Never expose provider credentials to the browser, represent fixtures as live data, infer payment success from a redirect, or automatically retry an ambiguous chargeable provider mutation. Production requires the roadmap gates and evidence.
