@@ -40,6 +40,7 @@ export interface MockQuoteResponse {
 }
 
 export interface MockQuoteRequest {
+  customerSubject: string;
   requestHash: string;
   accessTokenHash: string;
   correlationId: string;
@@ -47,6 +48,7 @@ export interface MockQuoteRequest {
 }
 
 export interface MockOrderFromQuoteRequest {
+  customerSubject: string;
   quoteId: string;
   accessTokenHash: string;
   idempotencyKey: string;
@@ -90,7 +92,7 @@ export type MockOrderDecision =
 
 export interface MockOrderStore {
   createQuote(input: MockQuoteRequest): Promise<MockQuoteResponse>;
-  getQuote(quoteId: string, accessTokenHash: string): Promise<MockQuoteResponse | null>;
+  getQuote(quoteId: string, accessTokenHash: string, customerSubject: string): Promise<MockQuoteResponse | null>;
   createFromQuote(input: MockOrderFromQuoteRequest): Promise<MockOrderDecision>;
-  get(orderId: string): Promise<MockOrderResponse | null>;
+  get(orderId: string, customerSubject: string): Promise<MockOrderResponse | null>;
 }
