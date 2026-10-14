@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
 import { Pool } from "pg";
 import {
@@ -12,23 +14,67 @@ import {
 const databaseUrl = process.env.DATABASE_URL;
 const options = { skip: !databaseUrl ? "DATABASE_URL is not set; PostgreSQL integration test skipped" : false };
 
-async function withOrderFixture<T>(
-  run: (pool: Pool, values: { customerId: string; quoteId: string; orderId: string; correlationId: string }) => Promise<T>
-): Promise<T> {
+async function withIsolatedPool<T>(run: (pool: Pool) => Promise<T>): Promise<T> {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for this test");
   }
 
-  const pool = new Pool({ connectionString: databaseUrl });
-  const values = {
-    customerId: randomUUID(),
-    quoteId: randomUUID(),
-    orderId: randomUUID(),
-    correlationId: randomUUID()
-  };
-  const publicOrderNumber = "BLK-TEST-" + randomUUID();
+  const adminPool = new Pool({ connectionString: databaseUrl });
+  const schema = "beelka_test_" + randomUUID().replace(/-/g, "");
+  await adminPool.query('CREATE SCHEMA "' + schema + '"');
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    options: "-c search_path=" + schema
+  });
 
   try {
+    await pool.query(`CREATE TABLE schema_migrations (
+      version TEXT PRIMARY KEY,
+      checksum CHAR(64) NOT NULL,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+
+    const migrationDirectory = path.resolve(process.cwd(), "migrations");
+    const migrations = (await readdir(migrationDirectory))
+      .filter((name) => /^\d{4,}_[a-z0-9_]+\.sql$/.test(name))
+      .sort();
+
+    for (const name of migrations) {
+      const sql = await readFile(path.join(migrationDirectory, name), "utf8");
+      const checksum = createHash("sha256").update(sql, "utf8").digest("hex");
+      await pool.query("BEGIN");
+      try {
+        await pool.query(sql);
+        await pool.query(
+          "INSERT INTO schema_migrations(version, checksum) VALUES ($1, $2)",
+          [name, checksum]
+        );
+        await pool.query("COMMIT");
+      } catch (error) {
+        await pool.query("ROLLBACK");
+        throw error;
+      }
+    }
+
+    return await run(pool);
+  } finally {
+    await pool.end();
+    await adminPool.query('DROP SCHEMA "' + schema + '" CASCADE');
+    await adminPool.end();
+  }
+}
+
+async function withOrderFixture<T>(
+  run: (pool: Pool, values: { customerId: string; quoteId: string; orderId: string; correlationId: string }) => Promise<T>
+): Promise<T> {
+  return withIsolatedPool(async (pool) => {
+    const values = {
+      customerId: randomUUID(),
+      quoteId: randomUUID(),
+      orderId: randomUUID(),
+      correlationId: randomUUID()
+    };
+
     await pool.query(
       "INSERT INTO customers (id, auth_subject, email_normalized) VALUES ($1, $2, $3)",
       [values.customerId, "test:" + values.customerId, values.customerId + "@example.test"]
@@ -43,16 +89,8 @@ async function withOrderFixture<T>(
                TRUE, now(), now() + interval '1 hour')`,
       [values.quoteId, values.customerId, "a".repeat(64)]
     );
-    return await run(pool, values);
-  } finally {
-    await pool.query("DELETE FROM audit_events WHERE entity_id = $1", [values.orderId]);
-    await pool.query("DELETE FROM order_events WHERE order_id = $1", [values.orderId]);
-    await pool.query("DELETE FROM order_items WHERE order_id = $1", [values.orderId]);
-    await pool.query("DELETE FROM orders WHERE id = $1", [values.orderId]);
-    await pool.query("DELETE FROM quotes WHERE id = $1", [values.quoteId]);
-    await pool.query("DELETE FROM customers WHERE id = $1", [values.customerId]);
-    await pool.end();
-  }
+    return run(pool, values);
+  });
 }
 
 async function createFixtureOrder(
@@ -182,6 +220,18 @@ test("database constraint rejects a mismatched order total", options, async () =
     await createFixtureOrder(pool, values);
     await assert.rejects(
       pool.query("UPDATE orders SET total_minor = total_minor + 1 WHERE id = $1", [values.orderId])
+    );
+  });
+});
+
+test("audit and order events reject updates and deletes", options, async () => {
+  await withOrderFixture(async (pool, values) => {
+    await createFixtureOrder(pool, values);
+    await assert.rejects(
+      pool.query("UPDATE audit_events SET action = 'TAMPERED' WHERE entity_id = $1", [values.orderId])
+    );
+    await assert.rejects(
+      pool.query("DELETE FROM order_events WHERE order_id = $1", [values.orderId])
     );
   });
 });
