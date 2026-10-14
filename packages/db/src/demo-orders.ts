@@ -536,8 +536,21 @@ export async function createMockOrderFromQuote(
       return { kind: "in_progress" };
     }
 
-    if (quote.consumed_at !== null) return { kind: "quote_consumed" };
-    if (new Date(quote.expires_at).getTime() <= Date.now()) return { kind: "quote_expired" };
+    const removePendingClaim = async (): Promise<void> => {
+      await client.query(
+        "DELETE FROM idempotency_keys WHERE scope = 'mock-order-from-quote:create:v1' " +
+        "AND idempotency_key = $1 AND state = 'IN_PROGRESS'",
+        [input.idempotencyKey]
+      );
+    };
+    if (quote.consumed_at !== null) {
+      await removePendingClaim();
+      return { kind: "quote_consumed" };
+    }
+    if (new Date(quote.expires_at).getTime() <= Date.now()) {
+      await removePendingClaim();
+      return { kind: "quote_expired" };
+    }
 
     const consumed = await client.query(
       "UPDATE quotes SET consumed_at = now() " +
@@ -549,6 +562,7 @@ export async function createMockOrderFromQuote(
         "SELECT consumed_at FROM quotes WHERE id = $1",
         [input.quoteId]
       );
+      await removePendingClaim();
       return latest.rows[0]?.consumed_at ? { kind: "quote_consumed" } : { kind: "quote_expired" };
     }
 
