@@ -306,7 +306,7 @@ test("order creation requires idempotency even in mock mode", async () => {
     const response = await fetch(baseUrl + "/api/v1/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ serviceType: "flight", productId: "flight-demo-001", selection: {} })
+      body: JSON.stringify({ quoteId: quoteFixture.id })
     });
     const body = await response.json() as { error: { code: string } };
     assert.equal(response.status, 400);
