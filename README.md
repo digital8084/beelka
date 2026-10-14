@@ -14,6 +14,7 @@ Beelka is a public-facing customer platform for flights, hotels, trains and PPOB
 - [PostgreSQL Data Model](docs/DATA-MODEL.md)
 - [PostgreSQL Role Setup](docs/DATABASE-ROLE-SETUP.md)
 - [Security and Transaction Integrity](docs/SECURITY-TRANSACTIONS.md)
+- [Customer Authentication Integration](docs/AUTHENTICATION-INTEGRATION.md)
 - [Secret Scanning and Incident Response](docs/SECRET-SCANNING.md)
 - [UI/UX Blueprint](docs/UI-UX.md)
 - [Roadmap and Release Gates](docs/ROADMAP.md)
