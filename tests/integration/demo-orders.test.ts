@@ -9,22 +9,53 @@ import { createMockOrder, getMockOrder } from "../../packages/db/src/demo-orders
 import { hashRequest } from "../../packages/domain/src/idempotency.js";
 
 const databaseUrl = process.env.DATABASE_URL;
+const migrationDatabaseUrl = process.env.MIGRATION_DATABASE_URL?.trim() || databaseUrl;
+const adminDatabaseUrl = process.env.CI_ADMIN_DATABASE_URL?.trim() || migrationDatabaseUrl;
 const options = { skip: !databaseUrl ? "DATABASE_URL is not set; PostgreSQL integration test skipped" : false };
+const runtimeRoleOptions = {
+  skip: !databaseUrl || !process.env.CI_ADMIN_DATABASE_URL
+    ? "Dedicated runtime-role privilege test is exercised in CI"
+    : false
+};
 
 async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T> {
-  if (!databaseUrl) throw new Error("DATABASE_URL is required for this test");
+  if (!databaseUrl || !migrationDatabaseUrl || !adminDatabaseUrl) {
+    throw new Error("DATABASE_URL and migration/admin URLs are required for this test");
+  }
 
-  const adminPool = new Pool({ connectionString: databaseUrl });
+  const adminPool = new Pool({ connectionString: adminDatabaseUrl });
+  const migrationPool = new Pool({
+    connectionString: migrationDatabaseUrl,
+    options: "application_name=beelka_migration_test"
+  });
   const schema = "beelka_mock_test_" + randomUUID().replace(/-/g, "");
-  await adminPool.query('CREATE SCHEMA "' + schema + '"');
   const pool = new Pool({
     connectionString: databaseUrl,
-    options: "-c search_path=" + schema
+    options: "application_name=beelka_runtime_test -c search_path=" + schema
   });
+  let schemaCreated = false;
 
   try {
-    const client = await pool.connect();
+    const roles = await adminPool.query<{ migrator: string | null; runtime: string | null }>(
+      "SELECT to_regrole('beelka_migrator') AS migrator, to_regrole('beelka_runtime') AS runtime"
+    );
+    const hasSeparatedRoles = Boolean(roles.rows[0]?.migrator && roles.rows[0]?.runtime);
+
+    if (hasSeparatedRoles) {
+      await adminPool.query('CREATE SCHEMA "' + schema + '" AUTHORIZATION beelka_migrator');
+      await adminPool.query('GRANT USAGE ON SCHEMA "' + schema + '" TO beelka_runtime');
+      await adminPool.query(
+        'ALTER DEFAULT PRIVILEGES FOR ROLE beelka_migrator IN SCHEMA "' + schema +
+        '" GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO beelka_runtime'
+      );
+    } else {
+      await adminPool.query('CREATE SCHEMA "' + schema + '"');
+    }
+    schemaCreated = true;
+
+    const client = await migrationPool.connect();
     try {
+      await client.query("SET search_path TO " + schema);
       await client.query(`CREATE TABLE schema_migrations (
         version TEXT PRIMARY KEY,
         checksum CHAR(64) NOT NULL,
@@ -33,7 +64,7 @@ async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T
 
       const migrationDirectory = path.resolve(process.cwd(), "migrations");
       const migrations = (await readdir(migrationDirectory))
-        .filter((name) => /^\d{4,}_[a-z0-9_]+\.sql$/.test(name))
+        .filter((name) => /^\\d{4,}_[a-z0-9_]+\\.sql$/.test(name))
         .sort();
 
       for (const name of migrations) {
@@ -59,7 +90,10 @@ async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T
     return await run(pool);
   } finally {
     await pool.end();
-    await adminPool.query('DROP SCHEMA "' + schema + '" CASCADE');
+    await migrationPool.end();
+    if (schemaCreated) {
+      await adminPool.query('DROP SCHEMA "' + schema + '" CASCADE');
+    }
     await adminPool.end();
   }
 }
@@ -121,6 +155,62 @@ test("mock order, snapshot, and audit trail persist without creating a payment",
     assert.equal(paymentCount.rows[0]?.count, 0);
     assert.equal(eventCount.rows[0]?.count, 1);
     assert.equal(auditCount.rows[0]?.count, 1);
+  });
+});
+
+test("runtime DB role cannot rewrite append-only events or the migration ledger", runtimeRoleOptions, async () => {
+  await withIsolatedSchema(async (pool) => {
+    const result = await pool.query<{
+      current_user: string;
+      is_superuser: boolean;
+      table_owner: string;
+      can_read_audit: boolean;
+      can_insert_audit: boolean;
+      can_update_audit: boolean;
+      can_delete_audit: boolean;
+      can_update_order_events: boolean;
+      can_delete_order_events: boolean;
+      can_read_migration_ledger: boolean;
+    }>(
+      `SELECT current_user,
+              role.rolsuper AS is_superuser,
+              pg_get_userbyid(event_table.relowner) AS table_owner,
+              has_table_privilege(current_user, 'audit_events', 'SELECT') AS can_read_audit,
+              has_table_privilege(current_user, 'audit_events', 'INSERT') AS can_insert_audit,
+              has_table_privilege(current_user, 'audit_events', 'UPDATE') AS can_update_audit,
+              has_table_privilege(current_user, 'audit_events', 'DELETE') AS can_delete_audit,
+              has_table_privilege(current_user, 'order_events', 'UPDATE') AS can_update_order_events,
+              has_table_privilege(current_user, 'order_events', 'DELETE') AS can_delete_order_events,
+              has_table_privilege(current_user, 'schema_migrations', 'SELECT') AS can_read_migration_ledger
+         FROM pg_roles AS role
+         JOIN pg_class AS event_table ON event_table.oid = 'audit_events'::regclass
+        WHERE role.rolname = current_user`
+    );
+    const privilege = result.rows[0];
+    assert.ok(privilege);
+    assert.equal(privilege.current_user, "beelka_runtime");
+    assert.equal(privilege.is_superuser, false);
+    assert.equal(privilege.table_owner, "beelka_migrator");
+    assert.equal(privilege.can_read_audit, true);
+    assert.equal(privilege.can_insert_audit, true);
+    assert.equal(privilege.can_update_audit, false);
+    assert.equal(privilege.can_delete_audit, false);
+    assert.equal(privilege.can_update_order_events, false);
+    assert.equal(privilege.can_delete_order_events, false);
+    assert.equal(privilege.can_read_migration_ledger, false);
+
+    await assert.rejects(
+      pool.query("UPDATE audit_events SET action = 'MUTATED'"),
+      (error: unknown) => error instanceof Error && (error as Error & { code?: string }).code === "42501"
+    );
+    await assert.rejects(
+      pool.query("DELETE FROM order_events"),
+      (error: unknown) => error instanceof Error && (error as Error & { code?: string }).code === "42501"
+    );
+    await assert.rejects(
+      pool.query("SELECT * FROM schema_migrations"),
+      (error: unknown) => error instanceof Error && (error as Error & { code?: string }).code === "42501"
+    );
   });
 });
 
