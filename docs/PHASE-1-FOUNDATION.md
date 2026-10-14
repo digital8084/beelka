@@ -1,47 +1,50 @@
 # Phase 1 — Canonical Foundation
 
-Status: initial implementation baseline; not production-ready.
+Status: in progress; initial foundation merged, durable idempotency is under implementation; not production-ready.
 
-## Implemented in this phase-1 branch
+## Implemented on main
 
-- TypeScript project setup for Node.js 22+.
+- Node.js 22+/TypeScript project setup.
 - HTTP service shell with liveness and database readiness endpoints.
-- Service metadata explicitly identifies all four service modules as SIMULATED.
-- Order creation endpoint fails closed while live transactions are disabled.
+- All four service modules explicitly return SIMULATED metadata.
+- Order creation fails closed while live transactions are disabled.
 - Settings reject live MMBC mutations and live payment mode.
 - PostgreSQL migration for customers, quotes, orders, payments, provider attempts, idempotency keys, order events, audit events and outbox messages.
-- Migration runner records SHA-256 checksums and rejects edits to an already-applied migration.
+- Migration runner stores SHA-256 checksums and rejects edits to an already-applied migration.
 - Domain-level order/payment transition guards and stable JSON request hashing.
-- Unit/API tests and GitHub Actions CI with PostgreSQL 16 service.
+- GitHub Actions CI using PostgreSQL 16; typecheck, unit/API tests, build, migration and second-run migration check passed for initial foundation PR.
+
+## Current durable idempotency increment
+
+The phase-1 durable idempotency follow-up adds:
+- PostgreSQL states IN_PROGRESS and COMPLETED for idempotency entries.
+- Atomic key claim under unique constraint and row-lock conflict inspection.
+- Same-key/same-hash completed response replay.
+- Same key with a different payload hash is a conflict.
+- Concurrent claim integration test against PostgreSQL.
+- Applied migration checksum is preserved by adding a new migration, not editing 0001.
 
 ## Local setup
 
 1. Install Node.js 22 or newer and PostgreSQL 16.
-2. Copy .env.example to .env and configure only local credentials.
-3. Install dependencies using npm install.
-4. Start the API with npm run dev.
-5. Apply migrations with npm run db:migrate.
-6. Execute npm run typecheck, npm test, and npm run build.
+2. Copy .env.example to .env and configure local credentials only.
+3. Install dependencies with npm install.
+4. Apply migrations with npm run db:migrate.
+5. Run npm run dev.
+6. Run npm run typecheck, npm test and npm run build.
 
-Health endpoints:
+Endpoints:
 - GET /healthz: process liveness only.
-- GET /readyz: verifies database readiness; returns 503 when no database is configured or the database cannot be queried.
-- GET /api/v1/meta/services: returns the four service modules, clearly marked SIMULATED.
-- POST /api/v1/orders: intentionally returns LIVE_TRANSACTIONS_DISABLED until order/payment/provider workflows are implemented and approved.
+- GET /readyz: database readiness; 503 when PostgreSQL is not configured or unavailable.
+- GET /api/v1/meta/services: four service modules marked SIMULATED.
+- POST /api/v1/orders: intentionally returns LIVE_TRANSACTIONS_DISABLED.
 
-## Current limitations
+## Still incomplete within Phase 1
 
-- PostgreSQL runtime wiring currently supports readiness and migration only; repository/service persistence is still to be implemented.
-- No customer authentication, search form UI, booking workflow, live MMBC adapter, or payment gateway has been enabled.
-- Idempotency request hashing and constraints exist, but durable request replay middleware/service still needs implementation and concurrency integration tests.
-- SQL migration integration is exercised in CI against an ephemeral PostgreSQL instance; restore testing remains a later staging gate.
-- A real production gateway or supplier mutation must not be enabled via environment variable; explicit contract implementation, tests, review and release gate are required.
-
-## Phase 1 exit gate still required
-
-- CI passes on this branch with captured run evidence.
-- Migration runs on an empty database and is a no-op on second run with checksum unchanged.
-- Durable idempotency and conflicting-payload rejection implemented and concurrency-tested.
-- State transition changes are persisted transactionally with append-only order/audit events.
-- Database repository integration tests cover constraints and competing state transitions.
-- Secret scanning/dependency review and a code review are completed.
+- Wire repositories to customer/order/quote routes.
+- Use durable idempotency service in mutation endpoints after those endpoints are implemented.
+- Persist order transitions with order_events and audit_events in one transaction.
+- Add integration tests for DB constraints and concurrent order state transitions.
+- Establish committed dependency lockfile and reproducible clean install.
+- Review dependency/security scanning and secret scanning in CI.
+- Authentication, customer UI, live MMBC adapters, payment gateway and cloud deployment are later phases and remain disabled.
