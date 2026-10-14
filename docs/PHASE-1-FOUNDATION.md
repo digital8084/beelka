@@ -13,7 +13,7 @@ Status: the mock API foundation, reproducible dependency installation, dependenc
 - Quote-backed order repository that snapshots price/terms and writes status events plus audit records atomically.
 - Database triggers reject UPDATE/DELETE on audit and order event history.
 - Committed npm lockfile with CI/security installs using `npm ci`.
-- GitHub Actions dependency audit (`npm audit --audit-level=high`) and CodeQL JavaScript/TypeScript analysis.
+- GitHub Actions dependency audit (`npm audit --audit-level=high`), CodeQL JavaScript/TypeScript analysis, and a TruffleHog secret-scan workflow (verified/unknown findings; pull request/push plus scheduled/manual history scan).
 - Mock API stays non-bookable and non-purchasable; MMBC and real payment mutations remain disabled.
 
 ## Current API scaffold
@@ -32,7 +32,7 @@ Status: the mock API foundation, reproducible dependency installation, dependenc
 
 1. **Migration/runtime role separation:** run migrations with a dedicated owner role; run application queries as a non-superuser runtime role that cannot modify append-only events or migration history.
 2. Complete runtime privilege integration tests and keep schema/table ownership separate from the API role.
-3. Add secret scanning and define how alerts are reviewed/remediated; CodeQL and dependency audit are active, but do not imply secret scanning is already active.
+3. Define an owner and remediation runbook for dependency, CodeQL, and secret-scan findings; scanning is automated, but no scan can prove credentials were never exposed. Rotate any credential that is found.
 4. Complete final database constraints/repository integration tests and evidence retention.
 5. Do not declare Phase 1 fully green until all gates pass or a risk record explicitly accepts any exception.
 
