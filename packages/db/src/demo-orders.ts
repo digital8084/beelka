@@ -686,7 +686,7 @@ export async function createMockOrderFromQuote(
 
     const completed = await client.query(
       "UPDATE idempotency_keys SET state = 'COMPLETED', response_status = 201, " +
-      "safe_response = $3::jsonb, resource_type = 'mock_order', resource_id = $4 " +
+      "safe_response = $4::jsonb, resource_type = 'mock_order', resource_id = $5 " +
       "WHERE scope = $1 AND idempotency_key = $2 " +
       "AND request_hash = $3 AND state = 'IN_PROGRESS'",
       [scope, input.idempotencyKey, input.requestHash, JSON.stringify(order), orderId]
