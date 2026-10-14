@@ -210,12 +210,14 @@ test("API root exposes modules and marks all provider adapters mock-only", async
       mode: string;
       liveTransactionsEnabled: boolean;
       paymentGatewayMode: string;
+      customerAuthenticationConfigured: boolean;
       services: Array<{ id: string; mode: string; liveEnabled: boolean }>;
     };
     assert.equal(response.status, 200);
     assert.equal(body.mode, "mock");
     assert.equal(body.liveTransactionsEnabled, false);
     assert.equal(body.paymentGatewayMode, "disabled");
+    assert.equal(body.customerAuthenticationConfigured, false);
     assert.deepEqual(body.services.map((item) => item.id), [
       "flights", "hotels", "trains", "ppob", "orders", "payments", "audit"
     ]);
