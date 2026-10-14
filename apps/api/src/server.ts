@@ -36,6 +36,8 @@ export interface AppDependencies {
   demoOrdersEnabled?: boolean;
   /** Must validate a real session/JWT/cookie using an approved identity provider. No header fallback is implemented. */
   authenticate?: Authenticator;
+  /** Exact browser origins allowed to call this API with CORS. Cookies are not enabled. */
+  corsAllowedOrigins?: readonly string[];
 }
 
 class RequestInputError extends Error {
@@ -192,6 +194,12 @@ async function handleRequest(
     } catch {
       errorResponse(res, 503, "DATABASE_UNAVAILABLE", "PostgreSQL tidak tersedia.", correlationId);
     }
+    return;
+  }
+
+  if (method === "GET" && path === "/api/v1/auth/me") {
+    await requirePrincipal(req, dependencies);
+    json(res, 200, { authenticated: true, requestId: correlationId });
     return;
   }
 
@@ -383,6 +391,46 @@ async function handleRequest(
 
 export function createAppServer(dependencies: AppDependencies = {}): Server {
   return createServer((req, res) => {
+    const requestOrigin = req.headers.origin;
+    const originAllowed = typeof requestOrigin === "string" &&
+      (dependencies.corsAllowedOrigins ?? []).includes(requestOrigin);
+
+    if (originAllowed && requestOrigin) {
+      res.setHeader("access-control-allow-origin", requestOrigin);
+      res.setHeader("vary", "Origin");
+      res.setHeader("access-control-expose-headers", "X-Request-ID");
+    }
+
+    if (req.method === "OPTIONS" && req.headers["access-control-request-method"]) {
+      const requestedMethod = req.headers["access-control-request-method"]?.toUpperCase() ?? "";
+      const requestedHeaders = (req.headers["access-control-request-headers"] ?? "")
+        .split(",")
+        .map((header) => header.trim().toLowerCase())
+        .filter(Boolean);
+      const permittedHeaders = new Set([
+        "authorization", "content-type", "idempotency-key", "x-quote-token", "x-request-id"
+      ]);
+      const preflightAllowed = originAllowed &&
+        ["GET", "POST"].includes(requestedMethod) &&
+        requestedHeaders.every((header) => permittedHeaders.has(header));
+
+      if (!preflightAllowed) {
+        res.writeHead(403, { "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        res.end();
+        return;
+      }
+
+      res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
+      res.setHeader(
+        "access-control-allow-headers",
+        "Authorization, Content-Type, Idempotency-Key, X-Quote-Token, X-Request-ID"
+      );
+      res.setHeader("access-control-max-age", "600");
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+
     void handleRequest(req, res, dependencies).catch((error: unknown) => {
       if (error instanceof AuthenticationProviderUnavailableError) {
         errorResponse(
