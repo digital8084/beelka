@@ -7,7 +7,9 @@ Status: initial server/API scaffold. All search and order examples below are fix
 - Search/catalog responses include `mode: "mock"`.
 - Flight/hotel/train results have `bookable: false`.
 - PPOB products have `purchasable: false`.
-- Demo orders are `QUOTED`, with `paymentState: "NOT_STARTED"` and `fulfillmentState: "NOT_STARTED"`.
+- Quotes expire after 15 minutes and are marked `ACTIVE`, `EXPIRED`, or `CONSUMED`.
+- Order confirmation consumes exactly one persisted quote; demo orders are `QUOTED`, with `paymentState: "NOT_STARTED"` and `fulfillmentState: "NOT_STARTED"`.
+- `POST /api/v1/quotes` returns a random bearer token once; only its SHA-256 digest is stored. `GET /api/v1/quotes/:id` and quote confirmation require `X-Quote-Token`.
 - No endpoint calls MMBC or a payment gateway.
 - A correlation identifier is returned in `requestId` and the `X-Request-ID` response header. A caller-provided `X-Request-ID` is accepted only when it matches a bounded safe character set.
 - Mutating request body must use `Content-Type: application/json`; body limit is 16 KiB.
@@ -24,7 +26,7 @@ Status: initial server/API scaffold. All search and order examples below are fix
 | POST | `/api/v1/flights/search` | Mock flight result; no booking |
 | POST | `/api/v1/hotels/search` | Mock hotel result; no booking |
 | POST | `/api/v1/trains/search` | Mock train result; no booking |
-| GET | `/api/v1/ppob/products` | Mock PPOB catalog; no purchase |
+| GET | `/api/v1/ppob/products` | Mock PPOB catalog; no purchase |\n| POST | `/api/v1/quotes` | Persist a server-priced 15-minute mock quote; returns a one-time access token |\n| GET | `/api/v1/quotes/:id` | Read a quote using the matching `X-Quote-Token` bearer token |
 | POST | `/api/v1/orders` | Idempotent demo order in PostgreSQL; no payment/fulfillment |
 | GET | `/api/v1/orders/:id` | Read a simulated order by UUID when demo orders are enabled |
 | GET | `/api/v1/admin/audit-events` | Not exposed; returns 404 until authentication/authorization is implemented |
@@ -86,39 +88,64 @@ Station-like codes use 3–8 safe alphanumeric/hyphen characters; origin and des
 
 Returns fixture products only: `ppob-electricity-demo` and `ppob-mobile-data-demo`. The mock order endpoint accepts the fixture's fixed denomination, but never performs bill inquiry, payment, token issuance or a real purchase. Customer account/customer-number input is deliberately absent to avoid collecting real identifiers in the demo scaffold.
 
-## Create a demo order
+## Persisted quote and order confirmation
 
-`POST /api/v1/orders`
+### Create a quote
 
-Required header: `Idempotency-Key`, 8–128 safe ASCII characters. The endpoint also requires PostgreSQL and local demo-order enablement.
+POST /api/v1/quotes
 
-Example flight body:
+The endpoint requires PostgreSQL and local demo-order enablement. The server validates the service/product/selection and derives price from the allow-listed mock fixture; any client-provided price fields are ignored.
 
-```json
-{
-  "serviceType": "flight",
-  "productId": "flight-demo-001",
-  "selection": {
-    "origin": "CGK",
-    "destination": "DPS",
-    "departureDate": "2026-12-01",
-    "adults": 1,
-    "children": 0,
-    "infants": 0
-  }
-}
-```
+    {
+      "serviceType": "flight",
+      "productId": "flight-demo-001",
+      "selection": {
+        "origin": "CGK",
+        "destination": "DPS",
+        "departureDate": "2026-12-01",
+        "adults": 1,
+        "children": 0,
+        "infants": 0
+      }
+    }
 
-The server validates the selection and derives the amount from a known fixture; client-submitted price fields are not accepted as authoritative. The server writes the synthetic customer reference, quote/terms snapshot, order, order item, order event, audit event and completed idempotency response in one PostgreSQL transaction. No payment or supplier attempt is started.
+The response includes a quote UUID, normalized selection, immutable price/terms snapshot, quotedAt, expiresAt (15 minutes later), mode=mock, and an accessToken. Keep the accessToken private in the client session: it is returned once and the database stores only its SHA-256 digest. Do not send it in URLs or log it.
+
+### Read a quote
+
+GET /api/v1/quotes/:id
+
+Required header: X-Quote-Token.
+
+The response includes status ACTIVE, EXPIRED, or CONSUMED and the stored server-computed amount/terms. An invalid or missing token returns 404 QUOTE_NOT_FOUND to avoid revealing whether a quote ID exists.
+
+### Confirm a quote into an order
+
+POST /api/v1/orders
+
+Required headers:
+- Idempotency-Key, 8–128 safe ASCII characters.
+- X-Quote-Token, the token returned when the quote was created.
+
+Body:
+
+    {
+      "quoteId": "UUID-returned-by-POST-api-v1-quotes"
+    }
+
+The server locks the quote row, validates the token digest and expiry, and consumes it within the same PostgreSQL transaction that creates the order, order item, order/audit events and completed idempotency response. Price and terms come only from the persisted quote; product/selection/amount fields in the order request are ignored. One quote can create at most one order. No payment or supplier attempt is started.
 
 Key reuse behavior:
-- Same key + same normalized request: returns the original order response.
-- Same key + different normalized request: `409 IDEMPOTENCY_KEY_CONFLICT`.
-- Same key with a live in-progress claim: `409 IDEMPOTENCY_IN_PROGRESS`.
-- Expired key: `409 IDEMPOTENCY_KEY_EXPIRED`; use a new key.
-- Missing key: `400 IDEMPOTENCY_KEY_REQUIRED`.
+- Same key + same quote ID returns the original order response, provided the caller still proves possession of the quote token.
+- Same key + different quote ID returns 409 IDEMPOTENCY_KEY_CONFLICT.
+- A live in-progress claim returns 409 IDEMPOTENCY_IN_PROGRESS.
+- Expired idempotency key returns 409 IDEMPOTENCY_KEY_EXPIRED; use a new key.
+- An expired quote returns 409 QUOTE_EXPIRED. Create and review a new quote.
+- A consumed quote with a new idempotency key returns 409 QUOTE_ALREADY_USED.
+- Missing Idempotency-Key returns 400 IDEMPOTENCY_KEY_REQUIRED.
+- Missing X-Quote-Token returns 400 QUOTE_ACCESS_TOKEN_REQUIRED.
 
-The idempotency namespace is global to unauthenticated demo orders. It must be changed to include the authenticated customer/tenant identity before implementing customer-owned production order routes.
+The idempotency scope remains global to this unauthenticated demo surface. Before real customer flows, scope keys and quote ownership to an authenticated customer/tenant and apply authorization on every read/mutation.
 
 ## Environment guard
 
@@ -130,7 +157,7 @@ The idempotency namespace is global to unauthenticated demo orders. It must be c
 
 ## Known limitations
 
-- This scaffold does not yet create persistent quote IDs on search; an order revalidates and stores a server-computed fixture snapshot from the submitted selection.
+- Search remains read-only and does not automatically create quotes. The client must explicitly request a quote after reviewing a search result.
 - No authentication, authorization middleware, rate limiter, customer UI, payment adapter, provider adapter or cloud deployment is implemented.
 - Search fixtures use invented demo labels and fixed sample rates; they must never be presented as real availability or price.
-- Production order APIs should use quote ownership/expiry, customer-scoped idempotency, authorization and a proper quote-to-order workflow.
+- Persisted quote tokens are capability credentials for this mock-only scaffold, not a replacement for customer authentication. Production still needs authenticated ownership, provider-side price revalidation, customer-scoped idempotency, and service-specific contract confirmation.
