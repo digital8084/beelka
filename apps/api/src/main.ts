@@ -26,6 +26,7 @@ const dependencies = {
       }
     : {}),
   demoOrdersEnabled: settings.demoOrdersEnabled,
+  corsAllowedOrigins: settings.corsAllowedOrigins,
   ...(settings.googleIdentityPlatformProjectId
     ? { authenticate: createGoogleIdentityPlatformAuthenticator(settings.googleIdentityPlatformProjectId) }
     : {})

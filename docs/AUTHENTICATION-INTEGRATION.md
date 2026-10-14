@@ -36,6 +36,12 @@ The current adapter accepts bearer tokens only; it does not set or read browser 
 
 There is no API-side endpoint for sign-in, sign-up, password reset, callback handling or token issuance in this iteration.
 
+## Real-project smoke test
+
+Use the temporary browser harness and follow [Identity Platform staging smoke test](IDENTITY-PLATFORM-STAGING-SMOKE.md). It exercises Google sign-in and sends the provider-issued ID token to `GET /api/v1/auth/me`. The harness does not persist its own session beyond the page memory, display the raw token, or prove production readiness. Keep it private to developers/testers and use a non-production Google project.
+
+The API only returns CORS headers for origins explicitly listed in `BEELKA_CORS_ORIGINS`. Use exact origins, such as `http://localhost:4173` for local testing; wildcards, paths and credentials are not accepted by the setting parser. CORS is not a substitute for token verification.
+
 ## How ownership is enforced
 
 - `POST /api/v1/quotes` requires an authenticated principal and associates the quote with the internal customer row for that principal's subject.

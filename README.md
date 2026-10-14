@@ -15,6 +15,7 @@ Beelka is a public-facing customer platform for flights, hotels, trains and PPOB
 - [PostgreSQL Role Setup](docs/DATABASE-ROLE-SETUP.md)
 - [Security and Transaction Integrity](docs/SECURITY-TRANSACTIONS.md)
 - [Customer Authentication Integration](docs/AUTHENTICATION-INTEGRATION.md)
+- [Identity Platform Staging Smoke Test](docs/IDENTITY-PLATFORM-STAGING-SMOKE.md)
 - [Secret Scanning and Incident Response](docs/SECRET-SCANNING.md)
 - [UI/UX Blueprint](docs/UI-UX.md)
 - [Roadmap and Release Gates](docs/ROADMAP.md)
@@ -48,6 +49,7 @@ Do not enable unauthenticated demo order writes in production. Current configura
 - `GET /healthz` — process liveness.
 - `GET /readyz` — PostgreSQL readiness.
 - `GET /api/v1` — modules, mode, live-operation flags, and whether a trusted customer authenticator is wired.
+- `GET /api/v1/auth/me` — protected, low-information endpoint to verify the current bearer token; returns only `authenticated: true` after trusted verification.
 - `POST /api/v1/flights/search` — mock-only flight search.
 - `POST /api/v1/hotels/search` — mock-only hotel search.
 - `POST /api/v1/trains/search` — mock-only train search.
@@ -60,4 +62,4 @@ Do not enable unauthenticated demo order writes in production. Current configura
 
 ## Safety and scope
 
-Customer quote/order routes use the Google Identity Platform/Firebase Admin SDK adapter when `GOOGLE_CLOUD_PROJECT` (or `FIREBASE_PROJECT_ID`) and Application Default Credentials are configured. Send the client-issued ID token as `Authorization: Bearer <ID_TOKEN>`; the server validates it and checks revocation. Without a project ID, these routes remain fail-closed with `AUTHENTICATION_NOT_CONFIGURED`. Beelka does not issue login tokens itself. No production login UI, real payment gateway, MMBC live adapter or cloud deployment is claimed complete. Never expose provider credentials to the browser, represent fixtures as live data, infer payment success from a redirect, or automatically retry an ambiguous chargeable provider mutation. Production requires the roadmap gates and evidence.
+Customer quote/order routes use the Google Identity Platform/Firebase Admin SDK adapter when `GOOGLE_CLOUD_PROJECT` (or `FIREBASE_PROJECT_ID`) and Application Default Credentials are configured. Send the client-issued ID token as `Authorization: Bearer <ID_TOKEN>`; the server validates it and checks revocation. Without a project ID, these routes remain fail-closed with `AUTHENTICATION_NOT_CONFIGURED`. The protected `GET /api/v1/auth/me` endpoint and a temporary browser smoke harness are available for staging verification. The full public customer UI, real payment gateway, MMBC live adapter and cloud deployment are not complete. Never expose provider credentials to the browser, represent fixtures as live data, infer payment success from a redirect, or automatically retry an ambiguous chargeable provider mutation. Production requires the roadmap gates and evidence.

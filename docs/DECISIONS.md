@@ -40,12 +40,27 @@ Decision: use PostgreSQL uniqueness constraints for idempotency, append-only ord
 
 Reason: booking, issue and bill-payment mutations have financial/customer impact; blind retries can duplicate charges or bookings.
 
+### ADR-004: Google Identity Platform for customer identity
+
+Status: accepted on 2026-10-14.
+
+Decision:
+- Use Google Identity Platform with the maintained Firebase Admin Node.js SDK to verify client-issued ID tokens on the server.
+- Use the project-scoped stable identity (Google Identity Platform project ID + UID) as the internal customer subject. Verify revocation/disabled-user state on protected requests.
+- Client sends a bearer ID token over HTTPS. Beelka does not issue custom JWTs or trust identity supplied by a caller.
+- When the provider project is not configured, protected routes fail closed. Provider/ADC/network failures do not become successful authentication.
+- Separate non-production and production projects; staging smoke evidence is required before production eligibility.
+
+Consequences and remaining work:
+- The server adapter and a private staging smoke harness exist, but real Google project setup, ADC/IAM, web app configuration, customer UI, session lifecycle, account recovery, rate limiting and staging UAT remain release gates.
+- `GOOGLE_CLOUD_PROJECT` or `FIREBASE_PROJECT_ID` identifies the runtime project; it is not a secret. Server credentials must use ADC/workload identity or an untracked local credential file.
+
 ## Pending decisions
 
 - ADR-001: exact workspace structure and web framework.
 - ADR-002: payment gateway, methods, onboarding and refund support.
 - ADR-003: cloud provider/region, runtime topology and operational cost.
-- ADR-004: managed identity provider or application-owned auth/session.
+- ADR-004 follow-up: customer UI framework-independent session lifecycle, logout and account recovery policy.
 - ADR-005: legal, privacy, retention and deletion requirements.
 - ADR-006: exact current MMBC contracts, endpoints and live enablement procedure.
 - ADR-007: final money arithmetic/currency representation and display rounding policy.

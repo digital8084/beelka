@@ -173,6 +173,77 @@ test("another authenticated subject cannot read a quote or order through API rou
   });
 });
 
+test("identity introspection fails closed when no provider is configured", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me");
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 503);
+    assert.equal(body.error.code, "AUTHENTICATION_NOT_CONFIGURED");
+  });
+});
+
+test("identity introspection rejects unauthenticated requests", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me");
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 401);
+    assert.equal(body.error.code, "AUTHENTICATION_REQUIRED");
+  }, { authenticate: async () => null });
+});
+
+test("identity introspection confirms authentication without exposing the provider subject", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me");
+    const body = await response.json() as Record<string, unknown>;
+    assert.equal(response.status, 200);
+    assert.equal(body.authenticated, true);
+    assert.equal("subject" in body, false);
+  }, { ...testAuth("customer:auth-smoke-test") });
+});
+
+test("CORS preflight allows only configured origins and supported request headers", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:4173",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization"
+      }
+    });
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get("access-control-allow-origin"), "http://localhost:4173");
+    assert.match(response.headers.get("access-control-allow-headers") ?? "", /Authorization/);
+  }, { corsAllowedOrigins: ["http://localhost:4173"] });
+});
+
+test("CORS preflight rejects unknown origins or unsupported methods", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://untrusted.example",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "authorization"
+      }
+    });
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get("access-control-allow-origin"), null);
+  }, { corsAllowedOrigins: ["http://localhost:4173"] });
+
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/auth/me", {
+      method: "OPTIONS",
+      headers: {
+        origin: "http://localhost:4173",
+        "access-control-request-method": "DELETE",
+        "access-control-request-headers": "authorization"
+      }
+    });
+    assert.equal(response.status, 403);
+  }, { corsAllowedOrigins: ["http://localhost:4173"] });
+});
+
 test("health endpoint reports process liveness", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl + "/healthz");
