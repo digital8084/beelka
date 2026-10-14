@@ -77,8 +77,8 @@ const quoteFixture: MockQuoteResponse = {
   purchasable: false,
   selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01", adults: 1, children: 0, infants: 0 },
   terms: { mode: "mock", bookable: false },
-  quotedAt: "2026-10-14T00:00:00.000Z",
-  expiresAt: "2026-10-14T00:15:00.000Z"
+  quotedAt: "2026-12-01T00:00:00.000Z",
+  expiresAt: "2026-12-01T00:15:00.000Z"
 };
 
 function mockOrderStore(): MockOrderStore {
@@ -223,7 +223,8 @@ test("quote creation returns a persisted mock quote and one-time bearer token", 
       body: JSON.stringify({
         serviceType: "flight",
         productId: "flight-demo-001",
-        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" }
+        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" },
+        totalMinor: 1
       })
     });
     const body = await response.json() as MockQuoteResponse & { accessToken: string };
