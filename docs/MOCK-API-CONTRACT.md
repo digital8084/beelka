@@ -9,7 +9,8 @@ Status: initial server/API scaffold. All search and order examples below are fix
 - PPOB products have `purchasable: false`.
 - Quotes expire after 15 minutes and are marked `ACTIVE`, `EXPIRED`, or `CONSUMED`.
 - Order confirmation consumes exactly one persisted quote; demo orders are `QUOTED`, with `paymentState: "NOT_STARTED"` and `fulfillmentState: "NOT_STARTED"`.
-- `POST /api/v1/quotes` returns a random bearer token once; only its SHA-256 digest is stored. `GET /api/v1/quotes/:id` and quote confirmation require `X-Quote-Token`.
+- Quote/order operations require a verified identity from the trusted server-side `Authenticator` adapter, and quote reads/confirmation additionally require `X-Quote-Token`. The `main.ts` entry point does not yet wire a provider adapter, so these routes fail closed with `503 AUTHENTICATION_NOT_CONFIGURED` until the approved identity provider is integrated.
+- Customer ownership is enforced with the verified provider `subject`; caller-supplied `X-User-ID`/similar headers are never used. Idempotency scope is customer-specific and stores only a hash of the subject.
 - No endpoint calls MMBC or a payment gateway.
 - A correlation identifier is returned in `requestId` and the `X-Request-ID` response header. A caller-provided `X-Request-ID` is accepted only when it matches a bounded safe character set.
 - Mutating request body must use `Content-Type: application/json`; body limit is 16 KiB.
@@ -27,10 +28,10 @@ Status: initial server/API scaffold. All search and order examples below are fix
 | POST | `/api/v1/hotels/search` | Mock hotel result; no booking |
 | POST | `/api/v1/trains/search` | Mock train result; no booking |
 | GET | `/api/v1/ppob/products` | Mock PPOB catalog; no purchase |
-| POST | `/api/v1/quotes` | Persist a server-priced 15-minute mock quote; returns a one-time access token |
-| GET | `/api/v1/quotes/:id` | Read a quote using the matching `X-Quote-Token` bearer token |
-| POST | `/api/v1/orders` | Idempotent demo order in PostgreSQL; no payment/fulfillment |
-| GET | `/api/v1/orders/:id` | Read a simulated order by UUID when demo orders are enabled |
+| POST | `/api/v1/quotes` | Persist a server-priced 15-minute mock quote; requires configured trusted authentication and returns a one-time access token |
+| GET | `/api/v1/quotes/:id` | Read an owner-scoped quote using trusted authentication plus `X-Quote-Token` |
+| POST | `/api/v1/orders` | Owner-scoped quote confirmation; requires trusted authentication, `X-Quote-Token`, and idempotency; no payment/fulfillment |
+| GET | `/api/v1/orders/:id` | Read a simulated order by UUID only for the authenticated owner |
 | GET | `/api/v1/admin/audit-events` | Not exposed; returns 404 until authentication/authorization is implemented |
 
 ## Search inputs
@@ -111,7 +112,7 @@ The endpoint requires PostgreSQL and local demo-order enablement. The server val
       }
     }
 
-The response includes a quote UUID, normalized selection, immutable price/terms snapshot, quotedAt, expiresAt (15 minutes later), mode=mock, and an accessToken. Keep the accessToken private in the client session: it is returned once and the database stores only its SHA-256 digest. Do not send it in URLs or log it.
+The response includes a quote UUID, normalized selection, immutable price/terms snapshot, quotedAt, expiresAt (15 minutes later), mode=mock, and an accessToken. The route also requires the trusted identity provider adapter. Ownership is attached to the verified identity-provider subject. Keep the accessToken private in the client session: it is returned once and the database stores only its SHA-256 digest. Do not send it in URLs or log it.
 
 ### Read a quote
 
@@ -119,7 +120,7 @@ GET /api/v1/quotes/:id
 
 Required header: X-Quote-Token.
 
-The response includes status ACTIVE, EXPIRED, or CONSUMED and the stored server-computed amount/terms. An invalid or missing token returns 404 QUOTE_NOT_FOUND to avoid revealing whether a quote ID exists.
+The request requires both the verified identity-provider subject and `X-Quote-Token`. The response includes status ACTIVE, EXPIRED, or CONSUMED and the stored server-computed amount/terms. Invalid identity, token, owner, or quote returns the corresponding fail-closed response; a quote not owned by the authenticated subject returns 404 QUOTE_NOT_FOUND to avoid revealing whether another customer\u2019s quote exists.
 
 ### Confirm a quote into an order
 
@@ -135,7 +136,7 @@ Body:
       "quoteId": "UUID-returned-by-POST-api-v1-quotes"
     }
 
-The server locks the quote row, validates the token digest and expiry, and consumes it within the same PostgreSQL transaction that creates the order, order item, order/audit events and completed idempotency response. Price and terms come only from the persisted quote; product/selection/amount fields in the order request are ignored. One quote can create at most one order. No payment or supplier attempt is started.
+The server derives ownership from the trusted authenticator\u2019s verified subject, locks the quote row, validates owner, token digest and expiry, and consumes it within the same PostgreSQL transaction that creates the order, order item, order/audit events and completed idempotency response. Price and terms come only from the persisted quote; product/selection/amount fields in the order request are ignored. Idempotency keys are scoped to a SHA-256 hash of the authenticated subject. One quote can create at most one order. No payment or supplier attempt is started.
 
 Key reuse behavior:
 - Same key + same quote ID returns the original order response, provided the caller still proves possession of the quote token.
@@ -160,6 +161,6 @@ The idempotency scope remains global to this unauthenticated demo surface. Befor
 ## Known limitations
 
 - Search remains read-only and does not automatically create quotes. The client must explicitly request a quote after reviewing a search result.
-- No authentication, authorization middleware, rate limiter, customer UI, payment adapter, provider adapter or cloud deployment is implemented.
+- The `Authenticator` injection boundary is implemented, but no concrete identity-provider/session adapter is wired into the application entry point yet. Quote and order routes remain closed until a provider is selected and integrated. There is no login/signup/session issuance, rate limiter, customer UI, payment adapter, provider adapter or cloud deployment.
 - Search fixtures use invented demo labels and fixed sample rates; they must never be presented as real availability or price.
-- Persisted quote tokens are capability credentials for this mock-only scaffold, not a replacement for customer authentication. Production still needs authenticated ownership, provider-side price revalidation, customer-scoped idempotency, and service-specific contract confirmation.
+- Quote tokens are additional capability credentials, not a replacement for customer authentication. A customer identity-provider subject is used as the owner key; production still needs the actual provider adapter, provider-side price revalidation, session lifecycle/revocation, customer-scoped authorization tests, and service-specific contract confirmation.
