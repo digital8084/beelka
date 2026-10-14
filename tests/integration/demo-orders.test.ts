@@ -26,12 +26,12 @@ async function withIsolatedSchema<T>(run: (pool: Pool) => Promise<T>): Promise<T
   const adminPool = new Pool({ connectionString: adminDatabaseUrl });
   const migrationPool = new Pool({
     connectionString: migrationDatabaseUrl,
-    options: "application_name=beelka_migration_test"
+    options: "-c application_name=beelka_migration_test -c search_path=" + schema
   });
   const schema = "beelka_mock_test_" + randomUUID().replace(/-/g, "");
   const pool = new Pool({
     connectionString: databaseUrl,
-    options: "application_name=beelka_runtime_test -c search_path=" + schema
+    options: "-c application_name=beelka_runtime_test -c search_path=" + schema
   });
   let schemaCreated = false;
 
