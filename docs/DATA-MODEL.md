@@ -31,7 +31,7 @@ erDiagram
 `id`, `email_normalized`, optional `phone_e164`, `display_name`, `auth_subject`, `created_at`, `updated_at`. Unique `auth_subject`; email uniqueness depends on auth policy. If using managed identity, do not store plaintext passwords.
 
 ### `quotes`
-`id`, `service_type`, `provider`, `request_hash`, `source_reference`, `quoted_amount_minor`, `currency`, `price_breakdown_json`, `terms_json`, `is_simulated`, `quoted_at`, `expires_at`, `created_by_customer_id`. Expired quotes cannot create orders. Provider session/rate keys should be encrypted and expire; never log them.
+`id`, `customer_id`, `service_type`, `provider`, `request_hash`, `source_reference`, `quoted_amount_minor`, `currency`, `price_breakdown`, `terms_snapshot`, `is_simulated`, `quoted_at`, `expires_at`, `access_token_hash`, `consumed_at`. Expired or consumed quotes cannot create new orders. The mock API returns a random bearer token once and persists only its SHA-256 digest. Never persist/log the raw token; production quote ownership must bind to authenticated customer/tenant identity.
 
 ### `orders`
 `id`, `public_order_number`, `customer_id`, `service_type`, `status`, `currency`, `subtotal_minor`, `fees_minor`, `discount_minor`, `total_minor`, `version`, `created_at`, `updated_at`. Unique `public_order_number`; use optimistic concurrency/row locks for transitions. A customer may access only their own orders.

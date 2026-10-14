@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import type { Server } from "node:http";
 import { createAppServer, type AppDependencies, type DatabaseProbe } from "../../apps/api/src/server.js";
-import type { MockOrderResponse, MockOrderStore } from "../../packages/domain/src/mock-orders.js";
+import type { MockOrderResponse, MockOrderStore, MockQuoteResponse } from "../../packages/domain/src/mock-orders.js";
 
 async function withServer<T>(
   callback: (baseUrl: string) => Promise<T>,
@@ -35,6 +36,7 @@ const orderFixture: MockOrderResponse = {
   serviceType: "flight",
   productId: "flight-demo-001",
   productName: "Penerbangan Contoh Beelka (FIKTIF)",
+  quoteId: "30d87366-5307-4d23-9fd4-4e2a8d1ca416",
   status: "QUOTED",
   currency: "IDR",
   subtotalMinor: "750000",
@@ -56,9 +58,36 @@ function mockDatabase(): DatabaseProbe {
   return { query: async () => ({ rows: [{ "?column?": 1 }] }) };
 }
 
+const quoteAccessToken = "A".repeat(43);
+const quoteAccessTokenHash = createHash("sha256").update(quoteAccessToken).digest("hex");
+
+const quoteFixture: MockQuoteResponse = {
+  id: "30d87366-5307-4d23-9fd4-4e2a8d1ca416",
+  serviceType: "flight",
+  productId: "flight-demo-001",
+  productName: "Penerbangan Contoh Beelka (FIKTIF)",
+  status: "ACTIVE",
+  currency: "IDR",
+  subtotalMinor: "750000",
+  feesMinor: "0",
+  discountMinor: "0",
+  totalMinor: "750000",
+  mode: "mock",
+  bookable: false,
+  purchasable: false,
+  selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01", adults: 1, children: 0, infants: 0 },
+  terms: { mode: "mock", bookable: false },
+  quotedAt: "2026-12-01T00:00:00.000Z",
+  expiresAt: "2026-12-01T00:15:00.000Z"
+};
+
 function mockOrderStore(): MockOrderStore {
   return {
-    create: async () => ({ kind: "created", statusCode: 201, order: orderFixture }),
+    createQuote: async () => quoteFixture,
+    getQuote: async (id, tokenHash) => id === quoteFixture.id && tokenHash === quoteAccessTokenHash ? quoteFixture : null,
+    createFromQuote: async (input) => input.quoteId === quoteFixture.id && input.accessTokenHash === quoteAccessTokenHash
+      ? { kind: "created", statusCode: 201, order: orderFixture }
+      : { kind: "quote_not_found" },
     get: async (id) => id === orderFixture.id ? orderFixture : null
   };
 }
@@ -186,12 +215,86 @@ test("PPOB catalog items are never marked purchasable", async () => {
   });
 });
 
+test("quote creation returns a persisted mock quote and one-time bearer token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        serviceType: "flight",
+        productId: "flight-demo-001",
+        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" },
+        totalMinor: 1
+      })
+    });
+    const body = await response.json() as MockQuoteResponse & { accessToken: string };
+    assert.equal(response.status, 201);
+    assert.equal(body.id, quoteFixture.id);
+    assert.equal(body.status, "ACTIVE");
+    assert.equal(body.mode, "mock");
+    assert.equal(body.totalMinor, "750000");
+    assert.equal(body.bookable, false);
+    assert.match(body.accessToken, /^[A-Za-z0-9_-]{43}$/);
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true
+  });
+});
+
+test("quote lookup requires the quote capability token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/quotes/" + quoteFixture.id);
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 404);
+    assert.equal(body.error.code, "QUOTE_NOT_FOUND");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true
+  });
+});
+
+test("quote lookup succeeds only with the matching capability token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/quotes/" + quoteFixture.id, {
+      headers: { "x-quote-token": quoteAccessToken }
+    });
+    const body = await response.json() as MockQuoteResponse;
+    assert.equal(response.status, 200);
+    assert.equal(body.id, quoteFixture.id);
+    assert.equal(body.status, "ACTIVE");
+    assert.equal(body.totalMinor, "750000");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true
+  });
+});
+
+test("order creation requires a quote capability token", async () => {
+  await withServer(async (baseUrl) => {
+    const response = await fetch(baseUrl + "/api/v1/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "demo-order-token-1" },
+      body: JSON.stringify({ quoteId: quoteFixture.id })
+    });
+    const body = await response.json() as { error: { code: string } };
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "QUOTE_ACCESS_TOKEN_REQUIRED");
+  }, {
+    database: mockDatabase(),
+    mockOrderStore: mockOrderStore(),
+    demoOrdersEnabled: true
+  });
+});
+
 test("order creation stays disabled by default", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl + "/api/v1/orders", {
       method: "POST",
       headers: { "content-type": "application/json", "idempotency-key": "demo-order-test-1" },
-      body: JSON.stringify({ serviceType: "flight", productId: "flight-demo-001", selection: {} })
+      body: JSON.stringify({ quoteId: quoteFixture.id })
     });
     const body = await response.json() as { error: { code: string } };
     assert.equal(response.status, 503);
@@ -204,7 +307,7 @@ test("order creation requires idempotency even in mock mode", async () => {
     const response = await fetch(baseUrl + "/api/v1/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ serviceType: "flight", productId: "flight-demo-001", selection: {} })
+      body: JSON.stringify({ quoteId: quoteFixture.id })
     });
     const body = await response.json() as { error: { code: string } };
     assert.equal(response.status, 400);
@@ -216,19 +319,26 @@ test("order creation requires idempotency even in mock mode", async () => {
   });
 });
 
-test("order creation emits only a mock and non-bookable order", async () => {
+test("order creation confirms only a persisted quote and never trusts client price fields", async () => {
   await withServer(async (baseUrl) => {
     const response = await fetch(baseUrl + "/api/v1/orders", {
       method: "POST",
-      headers: { "content-type": "application/json", "idempotency-key": "demo-order-test-2" },
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": "demo-order-test-2",
+        "x-quote-token": quoteAccessToken
+      },
       body: JSON.stringify({
-        serviceType: "flight", productId: "flight-demo-001",
-        selection: { origin: "CGK", destination: "DPS", departureDate: "2026-12-01" }
+        quoteId: quoteFixture.id,
+        totalMinor: 1,
+        productId: "attacker-controlled-product"
       })
     });
     const body = await response.json() as MockOrderResponse;
     assert.equal(response.status, 201);
     assert.equal(body.mode, "mock");
+    assert.equal(body.quoteId, quoteFixture.id);
+    assert.equal(body.totalMinor, "750000");
     assert.equal(body.bookable, false);
     assert.equal(body.purchasable, false);
     assert.equal(body.paymentState, "NOT_STARTED");

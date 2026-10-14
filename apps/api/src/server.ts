@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { MockOrderStore } from "../../../packages/domain/src/mock-orders.js";
 import {
@@ -95,6 +95,16 @@ function errorResponse(
   json(res, statusCode, { error: { code, message }, requestId: correlationId });
 }
 
+function quoteAccessToken(req: IncomingMessage): string | null {
+  const header = req.headers["x-quote-token"];
+  const candidate = Array.isArray(header) ? header[0] : header;
+  return candidate && /^[A-Za-z0-9_-]{43}$/.test(candidate) ? candidate : null;
+}
+
+function hashQuoteToken(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
+
 function serviceMetadata(): Record<string, unknown> {
   return {
     mode: "mock",
@@ -168,6 +178,60 @@ async function handleRequest(
     return;
   }
 
+  if (method === "POST" && path === "/api/v1/quotes") {
+    if (!(dependencies.demoOrdersEnabled ?? false)) {
+      errorResponse(res, 503, "DEMO_ORDERS_DISABLED", "Pembuatan quote demo sedang dinonaktifkan.", correlationId);
+      return;
+    }
+    if (!dependencies.database || !dependencies.mockOrderStore) {
+      errorResponse(res, 503, "DATABASE_NOT_CONFIGURED", "Penyimpanan PostgreSQL diperlukan untuk quote demo.", correlationId);
+      return;
+    }
+
+    const body = await readJsonBody(req);
+    const spec = resolveMockOrder(body);
+    const accessToken = randomBytes(32).toString("base64url");
+    const requestHash = hashRequest({
+      serviceType: spec.serviceType,
+      productId: spec.productId,
+      selection: spec.selection
+    });
+    const quote = await dependencies.mockOrderStore.createQuote({
+      requestHash,
+      accessTokenHash: hashQuoteToken(accessToken),
+      correlationId,
+      spec
+    });
+    json(res, 201, { ...quote, accessToken, requestId: correlationId });
+    return;
+  }
+
+  const quoteMatch = method === "GET"
+    ? path.match(/^\/api\/v1\/quotes\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/)
+    : null;
+  if (quoteMatch) {
+    if (!(dependencies.demoOrdersEnabled ?? false)) {
+      errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
+      return;
+    }
+    if (!dependencies.database || !dependencies.mockOrderStore) {
+      errorResponse(res, 503, "DATABASE_NOT_CONFIGURED", "Penyimpanan PostgreSQL diperlukan untuk membaca quote demo.", correlationId);
+      return;
+    }
+    const token = quoteAccessToken(req);
+    if (!token) {
+      errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
+      return;
+    }
+    const quote = await dependencies.mockOrderStore.getQuote(quoteMatch[1] ?? "", hashQuoteToken(token));
+    if (!quote) {
+      errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
+      return;
+    }
+    json(res, 200, { ...quote, requestId: correlationId });
+    return;
+  }
+
   if (method === "POST" && path === "/api/v1/orders") {
     if (!(dependencies.demoOrdersEnabled ?? false)) {
       errorResponse(res, 503, "DEMO_ORDERS_DISABLED", "Pembuatan pesanan demo sedang dinonaktifkan.", correlationId);
@@ -184,22 +248,40 @@ async function handleRequest(
       errorResponse(res, 400, "IDEMPOTENCY_KEY_REQUIRED", "Header Idempotency-Key wajib diisi.", correlationId);
       return;
     }
+    const token = quoteAccessToken(req);
+    if (!token) {
+      errorResponse(res, 400, "QUOTE_ACCESS_TOKEN_REQUIRED", "Header X-Quote-Token wajib diisi untuk konfirmasi quote.", correlationId);
+      return;
+    }
 
     const body = await readJsonBody(req);
+    const quoteId = body.quoteId;
+    if (typeof quoteId !== "string" || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(quoteId)) {
+      throw new RequestInputError(400, "INVALID_QUOTE_ID", "quoteId harus UUID quote yang valid.");
+    }
+
     assertIdempotencyKey(key);
-    const spec = resolveMockOrder(body);
-    const requestHash = hashRequest({
-      serviceType: spec.serviceType,
-      productId: spec.productId,
-      selection: spec.selection
-    });
-    const decision = await dependencies.mockOrderStore.create({
+    const requestHash = hashRequest({ quoteId });
+    const decision = await dependencies.mockOrderStore.createFromQuote({
+      quoteId,
+      accessTokenHash: hashQuoteToken(token),
       idempotencyKey: key,
       requestHash,
-      correlationId,
-      spec
+      correlationId
     });
 
+    if (decision.kind === "quote_not_found") {
+      errorResponse(res, 404, "QUOTE_NOT_FOUND", "Quote tidak ditemukan.", correlationId);
+      return;
+    }
+    if (decision.kind === "quote_expired") {
+      errorResponse(res, 409, "QUOTE_EXPIRED", "Quote sudah kedaluwarsa; buat quote baru sebelum melanjutkan.", correlationId);
+      return;
+    }
+    if (decision.kind === "quote_consumed") {
+      errorResponse(res, 409, "QUOTE_ALREADY_USED", "Quote sudah digunakan untuk membuat pesanan.", correlationId);
+      return;
+    }
     if (decision.kind === "conflict") {
       errorResponse(res, 409, "IDEMPOTENCY_KEY_CONFLICT", "Idempotency-Key sudah dipakai dengan payload berbeda.", correlationId);
       return;

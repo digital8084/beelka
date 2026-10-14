@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { createMockOrder, getMockOrder } from "../../../packages/db/src/demo-orders.js";
+import { createMockOrderFromQuote, createMockQuote, getMockOrder, getMockQuote } from "../../../packages/db/src/demo-orders.js";
 import { createAppServer } from "./server.js";
 import { loadSettings } from "./settings.js";
 
@@ -17,7 +17,9 @@ const dependencies = {
     ? {
         database: pool,
         mockOrderStore: {
-          create: (input: Parameters<typeof createMockOrder>[1]) => createMockOrder(pool, input),
+          createQuote: (input: Parameters<typeof createMockQuote>[1]) => createMockQuote(pool, input),
+          getQuote: (id: string, accessTokenHash: string) => getMockQuote(pool, id, accessTokenHash),
+          createFromQuote: (input: Parameters<typeof createMockOrderFromQuote>[1]) => createMockOrderFromQuote(pool, input),
           get: (id: string) => getMockOrder(pool, id)
         }
       }

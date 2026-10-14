@@ -21,10 +21,13 @@ Status: the mock API foundation, reproducible dependency installation, dependenc
 - GET /api/v1 — module discovery and explicit mode flags.
 - POST /api/v1/flights/search, /hotels/search and /trains/search — validated fixture search responses.
 - GET /api/v1/ppob/products — fixed mock catalog.
-- POST /api/v1/orders — local-only simulated order, guarded by demo configuration and required Idempotency-Key.
+- POST /api/v1/quotes — persist a 15-minute mock quote with server-computed price/terms; raw bearer token is returned once and only its digest is stored.
+- GET /api/v1/quotes/:id — quote lookup requires X-Quote-Token and returns ACTIVE/EXPIRED/CONSUMED state.
+- POST /api/v1/orders — confirms an unexpired, unused quote with required Idempotency-Key and X-Quote-Token; consumes quote/order/audit/idempotency atomically.
 - GET /api/v1/orders/:id — reads simulated demo order by UUID.
 - Every returned item is marked mock and not bookable/purchasable.
-- Demo order, quote/terms snapshot, order item, audit/event entries and completed idempotency response are committed in one PostgreSQL transaction.
+- Quote creation commits the quote, synthetic owner, hashed access-token digest, and audit event in one PostgreSQL transaction.
+- Quote confirmation commits quote consumption, order item, order/audit events and completed idempotency response atomically.
 - The audit administration endpoint is not exposed until authentication/authorization is implemented.
 - No MMBC call, payment gateway request, booking, issue, token purchase or real debit occurs.
 

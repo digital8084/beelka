@@ -9,14 +9,14 @@ The core blueprint has the right control points: provider adapters per product f
 ## Priority P0 — Strengthen the canonical transaction boundary
 
 ### 1. Make quote a first-class persisted resource
-Current mock search returns fixture results, and order creation validates/recalculates a fixture snapshot. Before live integration, change the canonical flow to:
+The mock API now persists a quote snapshot before order confirmation. Its token/expiry flow is a safe foundation, but it is still mock-only and does not prove provider availability or live price validity. The target canonical flow is:
 
 ```text
-Search -> Quote snapshot -> Quote revalidation -> Customer confirmation
-       -> Order + idempotency record + audit/outbox (one DB transaction)
+Search -> Persisted quote snapshot -> Provider-specific revalidation (live only)
+       -> Explicit customer confirmation -> Order + idempotency + audit/outbox (one DB transaction)
 ```
 
-The quote should contain provider/product identity, normalized request hash, supplier reference or server-side session token, price breakdown/currency, terms/cancellation snapshot, simulation/live provenance, `quoted_at`, `expires_at`, and customer/tenant ownership. Expired quotes must not create orders. Never trust client-supplied totals. Each real provider must define when/how repricing is required.
+The persisted mock quote contains provider/product identity, normalized request hash, server-computed price/currency, terms/selection snapshot, simulation provenance, `quoted_at`, `expires_at`, a hashed bearer-token digest, and a single-use consumption timestamp. Expired or already-consumed quotes cannot create new orders. Never trust client-supplied totals. Before live adapters, bind quote ownership to an authenticated customer/tenant and define provider-specific revalidation/repricing, cancellation terms, and expiry semantics. The bearer token is a mock access capability, not customer authentication.
 
 ### 2. Unify idempotency implementations
 The project now has general PostgreSQL idempotency helpers and a transactionally integrated mock-order path. Keep the stronger invariant: the idempotency claim, order write and response snapshot should commit in one transaction whenever an operation is fully internal. For provider/gateway operations, persist a durable attempt/outbox intent first, call the remote API outside the DB transaction, then persist the outcome. Treat timeouts after possible acceptance as UNKNOWN and reconcile; internal idempotency alone cannot guarantee supplier-side exactly-once behavior.
@@ -86,7 +86,7 @@ For every capability, keep request/response fixtures that are redacted and tagge
 
 1. Merge and protect the mock API scaffold with green CI.
 2. Complete Phase 1 hygiene: reproducible lockfile, migration/runtime role split, security scanning and repository-layer tests.
-3. Implement quote persistence + quote expiry/revalidation contract.
+3. Extend persisted mock quote confirmation with authenticated customer ownership and provider-specific revalidation before enabling any live service.
 4. Add an authenticated customer identity boundary and customer-scoped order access.
 5. Verify read-only MMBC capabilities, one product family at a time.
 6. Select a gateway; implement sandbox/webhook/reconciliation flow.
