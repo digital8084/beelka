@@ -26,7 +26,7 @@ Status: the mock API foundation, reproducible installation, PostgreSQL runtime-r
 - POST /api/v1/orders — confirms an unexpired, unused quote with required Idempotency-Key and X-Quote-Token; consumes quote/order/audit/idempotency atomically.
 - GET /api/v1/orders/:id — reads simulated demo order by UUID.
 - Every returned item is marked mock and not bookable/purchasable.
-- Quote creation commits the quote, synthetic owner, hashed access-token digest, and audit event in one PostgreSQL transaction.
+- Quote creation commits the quote, verified customer subject mapping, hashed quote-token digest, and audit event in one PostgreSQL transaction.
 - Quote confirmation commits quote consumption, order item, order/audit events and completed idempotency response atomically.
 - The `Authenticator` injection boundary is fail-closed and does not trust caller-supplied identity headers; `main.ts` has no concrete provider adapter, so quote/order routes currently return `AUTHENTICATION_NOT_CONFIGURED`.
 - The audit administration endpoint remains unexposed until admin authorization is implemented.
