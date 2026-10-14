@@ -1,70 +1,61 @@
 # Beelka — Definition of Done and Acceptance Criteria
 
 ## Every pull request
-
-- Focused diff and clear intent; no unrelated provider/financial changes.
-- Typecheck, lint, unit tests and targeted integration tests pass.
-- New external request/response mapping has schema tests and safe failure behavior.
-- No secrets, PII fixtures or unredacted supplier payload in source/logs.
-- Migrations are forward-only and tested from an empty database.
-- State transitions and audit events are covered by tests.
-- README/docs and environment sample updated.
+- Focused diff; no unrelated provider/financial changes.
+- Lint, typecheck, unit and relevant integration tests pass.
+- API mappings have schema tests and safe failure paths.
+- No secrets, PII fixtures or unredacted provider response in source/logs.
+- Forward-only migrations tested from empty DB.
+- State changes and audit events covered by tests.
+- Docs and `.env.example` updated where necessary.
 
 ## Idempotency gate
-
-- Repeating same mutation with same key and same payload creates one logical resource.
-- Concurrent requests with same key do not create duplicates.
+- Same key/payload creates one logical resource.
+- Concurrent same-key requests do not duplicate.
 - Same key with changed normalized payload returns conflict.
-- Expired key policy is documented.
-- Unknown remote outcome goes to reconciliation and does not auto-repeat the provider mutation.
+- Key retention/expiry policy documented.
+- Unknown remote outcome enters reconciliation without automatic mutation retry.
 
 ## Payment gate
+- Missing/invalid signature rejected.
+- Duplicate webhook is logically processed once.
+- Amount/currency/order mismatch never marks success.
+- Redirect alone is not proof.
+- Out-of-order events cannot regress success to failure.
+- Payment timeout is reconciled using status query where available.
+- Payment and fulfillment are separate state machines.
 
-- Bad/missing signature is rejected.
-- Duplicate webhook event is recorded once logically.
-- Amount/currency/order mismatch does not transition payment to success.
-- Redirect callback alone does not prove payment.
-- Out-of-order events cannot regress success into failure.
-- Payment unknown timeout can be reconciled by provider status query.
-- Payment and fulfillment are independent states.
-
-## Supplier contract gate (per flight, hotel, rail and PPOB adapter)
-
-- API access and HTTPS endpoint verified with provider.
-- Required/optional fields, date formats, encoding, returned state and monetary semantics documented.
-- Current endpoint behavior contract-tested with authorized test data.
-- Rate/quote expiry and price change behavior tested.
-- Known failure and timeout-after-acceptance cases tested or explicitly documented as unresolved.
-- Provider response is retained safely with sensitive fields redacted.
-- Status lookup and recovery behavior documented.
-- Live enablement has owner approval, feature flag and kill switch.
+## Provider gate per service
+- Current API access and HTTPS endpoint verified.
+- Fields, dates, encoding, status mapping and money semantics documented.
+- Current behavior contract-tested with authorized data.
+- Quote expiry/price changes tested.
+- Known failure and timeout-after-acceptance tested or explicitly unresolved.
+- Safe redaction applied to retained responses.
+- Status/recovery documented.
+- Explicit live approval, feature flag and kill switch.
 
 ## Database gate
+- Required keys/constraints/indexes exist.
+- Migration runner controlled and migrations tested.
+- Competing status transitions tested.
+- Normal application role cannot mutate append-only audit history.
+- Backup restore demonstrated in staging.
 
-- All foreign keys, uniqueness constraints and indexes required for order/payment invariants exist.
-- Migrations run once with controlled deploy step.
-- Transaction tests cover competing status transitions.
-- Audit role cannot update/delete append-only records under normal application permissions.
-- Backup and restore are demonstrated in staging.
-
-## Web/UI gate
-
-- E2E covers the happy path and key failures for each enabled service.
-- All simulated results visibly marked.
-- Loading/empty/provider unavailable/quote expired/payment pending/provider pending/unknown/reconciliation states usable.
-- Customer authorization prevents cross-account order access.
-- Responsive and accessibility tests run at agreed widths and keyboard flows.
-- No placeholder buttons claim success or create live transactions.
+## UI gate
+- E2E covers happy path and important failures for each enabled service.
+- Simulated content visibly labeled.
+- Loading/empty/provider unavailable/quote expired/payment pending/provider unknown/reconciliation states usable.
+- Cross-account order access blocked.
+- Responsive and accessibility checks run.
+- No placeholder control claims success or triggers a live transaction.
 
 ## Cloud production gate
-
-- HTTPS, secrets manager, restrictive IAM and separate environments configured.
-- Health/readiness checks behave correctly when PostgreSQL/provider dependencies fail.
+- HTTPS, secret store, least-privilege IAM and environment separation.
+- Readiness checks critical dependencies; liveness checks process.
 - Rate limits, alerting, log redaction and error reporting reviewed.
-- Incident runbook, support owner, customer communication templates and disable/rollback plan ready.
-- Provider/payment reconciliation reviewed for pilot transactions.
-- Explicit business owner sign-off obtained.
+- Incident runbook, support owner and rollback/disable plan ready.
+- Payment/provider reconciliation reviewed and business owner signs off.
 
 ## Evidence bundle
-
-Attach per release: commit SHA, CI run URL, test summary, migration result, contract verification summary, staging smoke report, backup restore evidence, security scan result, reconciliation report and approvals. Do not include API secrets or customer personal data in evidence.
+Commit SHA, CI URL, test summary, migration result, contract verification, staging smoke, backup/restore proof, security scan, reconciliation report and approvals. Never attach secrets or customer PII.
