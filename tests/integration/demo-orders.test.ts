@@ -453,3 +453,48 @@ test("concurrent confirmations cannot create more than one order from a quote", 
     assert.equal(claims.rows[0]?.count, 1);
   });
 });
+
+
+test("quote and order are visible only to the verified owner subject", options, async () => {
+  await withIsolatedSchema(async (pool) => {
+    const owner = "customer:owner-one";
+    const other = "customer:other-two";
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token, "utf8").digest("hex");
+    const quote = await createMockQuote(pool, quoteRequest(flightSpec(), token, owner));
+
+    assert.ok(await getMockQuote(pool, quote.id, tokenHash, owner));
+    assert.equal(await getMockQuote(pool, quote.id, tokenHash, other), null);
+
+    const denied = await createMockOrderFromQuote(
+      pool,
+      orderFromQuoteRequest(quote.id, token, "ownership-cross-cust-001", other)
+    );
+    assert.equal(denied.kind, "quote_not_found");
+
+    const order = await createMockOrderFromQuote(
+      pool,
+      orderFromQuoteRequest(quote.id, token, "ownership-owner-key-001", owner)
+    );
+    assert.equal(order.kind, "created");
+    if (order.kind !== "created") return;
+
+    assert.ok(await getMockOrder(pool, order.order.id, owner));
+    assert.equal(await getMockOrder(pool, order.order.id, other), null);
+
+    const ownerScope = createHash("sha256").update(owner, "utf8").digest("hex");
+    const otherScope = createHash("sha256").update(other, "utf8").digest("hex");
+    const ownerReplay = await createMockOrderFromQuote(
+      pool,
+      orderFromQuoteRequest(quote.id, token, "ownership-owner-key-001", owner)
+    );
+    assert.equal(ownerReplay.kind, "replay");
+
+    const scopes = await pool.query<{ scope: string; count: string }>(
+      "SELECT scope, count(*)::text AS count FROM idempotency_keys " +
+      "WHERE scope LIKE 'mock-order-from-quote:create:v1:%' GROUP BY scope"
+    );
+    assert.ok(scopes.rows.some((row) => row.scope === "mock-order-from-quote:create:v1:" + ownerScope));
+    assert.ok(!scopes.rows.some((row) => row.scope === "mock-order-from-quote:create:v1:" + otherScope));
+  });
+});
