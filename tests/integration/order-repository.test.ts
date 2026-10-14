@@ -59,7 +59,7 @@ async function withIsolatedPool<T>(run: (pool: Pool) => Promise<T>): Promise<T> 
 
       const migrationDirectory = path.resolve(process.cwd(), "migrations");
       const migrations = (await readdir(migrationDirectory))
-        .filter((name) => /^\\d{4,}_[a-z0-9_]+\\.sql$/.test(name))
+        .filter((name) => /^\d{4,}_[a-z0-9_]+\.sql$/.test(name))
         .sort();
 
       for (const name of migrations) {
