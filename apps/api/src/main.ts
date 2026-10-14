@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { createMockOrder, getMockOrder } from "../../../packages/db/src/demo-orders.js";
 import { createAppServer } from "./server.js";
 import { loadSettings } from "./settings.js";
 
@@ -11,7 +12,20 @@ const pool = settings.databaseUrl
     )
   : undefined;
 
-const server = createAppServer(pool);
+const dependencies = {
+  ...(pool
+    ? {
+        database: pool,
+        mockOrderStore: {
+          create: (input: Parameters<typeof createMockOrder>[1]) => createMockOrder(pool, input),
+          get: (id: string) => getMockOrder(pool, id)
+        }
+      }
+    : {}),
+  demoOrdersEnabled: settings.demoOrdersEnabled
+};
+
+const server = createAppServer(dependencies);
 server.listen(settings.port, "0.0.0.0", () => {
   process.stdout.write(
     JSON.stringify({
@@ -20,6 +34,7 @@ server.listen(settings.port, "0.0.0.0", () => {
       port: settings.port,
       mode: settings.mode,
       databaseConfigured: Boolean(pool),
+      demoOrdersEnabled: settings.demoOrdersEnabled,
       liveTransactionsEnabled: false
     }) + "\n"
   );

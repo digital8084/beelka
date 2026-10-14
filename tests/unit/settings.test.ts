@@ -7,14 +7,31 @@ test("settings default to simulation and live mutations disabled", () => {
   assert.equal(settings.mode, "simulation");
   assert.equal(settings.paymentGatewayMode, "simulation");
   assert.equal(settings.mmbcLiveEnabled, false);
+  assert.equal(settings.demoOrdersEnabled, true);
 });
 
-test("live MMBC mode cannot be enabled in Phase 1", () => {
-  assert.throws(() => loadSettings({ MMBC_LIVE_ENABLED: "true" }), /disabled in Phase 1/);
+test("live MMBC mode cannot be enabled", () => {
+  assert.throws(() => loadSettings({ MMBC_LIVE_ENABLED: "true" }), /MMBC live mutations are disabled/);
 });
 
-test("live payment gateway mode cannot be enabled in Phase 1", () => {
-  assert.throws(() => loadSettings({ PAYMENT_GATEWAY_MODE: "live" }), /disabled in Phase 1/);
+test("live payment gateway mode cannot be enabled", () => {
+  assert.throws(() => loadSettings({ PAYMENT_GATEWAY_MODE: "live" }), /Live payment gateway mode is disabled/);
+});
+
+test("demo orders default off for production", () => {
+  const settings = loadSettings({ NODE_ENV: "production" });
+  assert.equal(settings.demoOrdersEnabled, false);
+});
+
+test("unauthenticated demo order endpoints cannot be enabled in production", () => {
+  assert.throws(
+    () => loadSettings({ NODE_ENV: "production", BEELKA_DEMO_ORDERS_ENABLED: "true" }),
+    /cannot be enabled in production/
+  );
+});
+
+test("invalid demo orders flag is rejected", () => {
+  assert.throws(() => loadSettings({ BEELKA_DEMO_ORDERS_ENABLED: "yes" }), /must be true or false/);
 });
 
 test("invalid port is rejected", () => {
