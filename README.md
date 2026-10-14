@@ -51,7 +51,9 @@ Do not enable unauthenticated demo order writes in production. Current configura
 - `POST /api/v1/hotels/search` — mock-only hotel search.
 - `POST /api/v1/trains/search` — mock-only train search.
 - `GET /api/v1/ppob/products` — mock-only catalog.
-- `POST /api/v1/orders` — database-backed demo order; requires `Idempotency-Key` and local demo-order enablement.
+- `POST /api/v1/quotes` — persists a 15-minute mock quote and returns a one-time access token.
+- `GET /api/v1/quotes/:id` — reads that quote only with `X-Quote-Token`.
+- `POST /api/v1/orders` — confirms a persisted quote; requires `X-Quote-Token`, `Idempotency-Key`, and local demo-order enablement.
 - `GET /api/v1/orders/:id` — UUID-based lookup for simulated demo orders only.
 - `GET /api/v1/admin/audit-events` — deliberately not exposed before authentication and authorization exist.
 
