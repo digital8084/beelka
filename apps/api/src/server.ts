@@ -207,7 +207,7 @@ async function handleRequest(
   }
 
   const quoteMatch = method === "GET"
-    ? path.match(/^\\/api\\/v1\\/quotes\\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/)
+    ? path.match(/^\/api\/v1\/quotes\/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$/)
     : null;
   if (quoteMatch) {
     if (!(dependencies.demoOrdersEnabled ?? false)) {
