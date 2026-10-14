@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>Beelka · Identity Platform Smoke Test</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <a class="brand" href="#" aria-label="Beelka Identity smoke test">
+        <span class="brand-mark">B</span><span>beelka<span class="brand-dot">.</span></span>
+      </a>
+      <span class="environment">STAGING SMOKE TEST</span>
+    </header>
+
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">IDENTITY PLATFORM · GOOGLE SIGN-IN</p>
+      <h1 id="page-title">Validasi autentikasi dari browser ke API.</h1>
+      <p class="lead">Alat pengujian untuk membuktikan alur Google sign-in, penerbitan ID token oleh Identity Platform, dan verifikasi token oleh backend Beelka. Bukan halaman login produksi.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="config-title">
+      <div class="panel-heading">
+        <div><p class="eyebrow">01 / KONFIGURASI</p><h2 id="config-title">Hubungkan project</h2></div>
+        <span class="step">Tanpa penyimpanan</span>
+      </div>
+      <p class="muted">Isi konfigurasi web app dari Google/Firebase Console. Konfigurasi web (termasuk API key) bukan kredensial server; jangan memasukkan private key atau service-account JSON di sini.</p>
+      <form id="config-form">
+        <div class="field-grid">
+          <label>Web API key<input id="api-key" name="apiKey" autocomplete="off" required placeholder="AIza…" spellcheck="false"></label>
+          <label>Auth domain<input id="auth-domain" name="authDomain" autocomplete="off" required placeholder="project.firebaseapp.com" spellcheck="false"></label>
+          <label>Project ID<input id="project-id" name="projectId" autocomplete="off" required placeholder="google-cloud-project-id" spellcheck="false"></label>
+          <label>App ID<input id="app-id" name="appId" autocomplete="off" required placeholder="1:123:web:…" spellcheck="false"></label>
+          <label class="wide">API origin<input id="api-origin" name="apiOrigin" type="url" value="http://localhost:8080" autocomplete="url" required spellcheck="false"><small>Untuk staging, gunakan HTTPS. HTTP hanya untuk localhost.</small></label>
+        </div>
+        <div class="actions">
+          <button id="connect-button" type="submit" class="button button-secondary">Validasi konfigurasi</button>
+          <span id="config-status" class="status" role="status" aria-live="polite">Belum dikonfigurasi</span>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="signin-title">
+      <div class="panel-heading">
+        <div><p class="eyebrow">02 / IDENTITY PLATFORM</p><h2 id="signin-title">Masuk dengan Google</h2></div>
+        <span class="step">Token tidak ditampilkan</span>
+      </div>
+      <p class="muted">Login memakai popup Google melalui Firebase Web SDK. Sesi pengujian hanya disimpan di memori halaman ini; jangan gunakan akun produksi atau data pelanggan riil.</p>
+      <div class="actions">
+        <button id="signin-button" type="button" class="button button-primary" disabled>Masuk dengan Google <span aria-hidden="true">↗</span></button>
+        <button id="signout-button" type="button" class="button button-secondary" disabled>Keluar</button>
+        <span id="signin-status" class="status" role="status" aria-live="polite">Menunggu konfigurasi</span>
+      </div>
+      <div id="account-summary" class="account-summary" hidden></div>
+    </section>
+
+    <section class="panel" aria-labelledby="verify-title">
+      <div class="panel-heading">
+        <div><p class="eyebrow">03 / VERIFIKASI BACKEND</p><h2 id="verify-title">Uji token dengan Beelka API</h2></div>
+        <span class="step">Read-only</span>
+      </div>
+      <p class="muted">Memanggil <code>GET /api/v1/auth/me</code> dengan ID token dalam header Authorization. Endpoint hanya mengembalikan status autentikasi, bukan UID atau token.</p>
+      <div class="actions">
+        <button id="verify-button" type="button" class="button button-primary" disabled>Verifikasi ke API</button>
+        <span id="verify-status" class="status" role="status" aria-live="polite">Belum dijalankan</span>
+      </div>
+      <pre id="result" class="result" aria-live="polite">Hasil verifikasi akan tampil di sini.</pre>
+    </section>
+
+    <footer class="footer">
+      <p><strong>Batas keamanan:</strong> Jangan publikasikan harness ini tanpa kontrol akses. Jangan kirim token ke URL, log, chat, atau tiket dukungan. Setelah UAT, tutup sesi dan hapus konfigurasi dari halaman dengan menutup tab.</p>
+      <p class="footer-link"><a href="https://github.com/digital8084/beelka/blob/main/docs/IDENTITY-PLATFORM-STAGING-SMOKE.md" target="_blank" rel="noreferrer">Panduan staging lengkap ↗</a></p>
+    </footer>
+  </main>
+</body>
+</html>
