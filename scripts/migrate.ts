@@ -5,14 +5,21 @@ import { Pool } from "pg";
 import { loadSettings } from "../apps/api/src/settings.js";
 
 const settings = loadSettings();
-if (!settings.databaseUrl) {
-  throw new Error("DATABASE_URL is required to run migrations");
+const migrationDatabaseUrl = process.env.MIGRATION_DATABASE_URL?.trim() || settings.databaseUrl;
+if (!migrationDatabaseUrl) {
+  throw new Error("MIGRATION_DATABASE_URL or DATABASE_URL is required to run migrations");
 }
 
+const migrationDatabaseSslValue = process.env.MIGRATION_DATABASE_SSL ?? process.env.DATABASE_SSL ?? String(settings.databaseSsl);
+if (!["true", "false"].includes(migrationDatabaseSslValue)) {
+  throw new Error("MIGRATION_DATABASE_SSL must be true or false");
+}
+const migrationDatabaseSsl = migrationDatabaseSslValue === "true";
+
 const pool = new Pool(
-  settings.databaseSsl
-    ? { connectionString: settings.databaseUrl, ssl: { rejectUnauthorized: true } }
-    : { connectionString: settings.databaseUrl }
+  migrationDatabaseSsl
+    ? { connectionString: migrationDatabaseUrl, ssl: { rejectUnauthorized: true } }
+    : { connectionString: migrationDatabaseUrl }
 );
 
 function checksum(content: string): string {
