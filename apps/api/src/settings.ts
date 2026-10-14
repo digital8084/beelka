@@ -6,6 +6,7 @@ export interface AppSettings {
   demoOrdersEnabled: boolean;
   databaseUrl: string | undefined;
   databaseSsl: boolean;
+  googleIdentityPlatformProjectId: string | undefined;
 }
 
 export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings {
@@ -44,6 +45,8 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings 
   }
 
   const databaseUrl = env.DATABASE_URL?.trim() || undefined;
+  const googleIdentityPlatformProjectId =
+    env.GOOGLE_CLOUD_PROJECT?.trim() || env.FIREBASE_PROJECT_ID?.trim() || undefined;
 
   return {
     port,
@@ -52,6 +55,7 @@ export function loadSettings(env: NodeJS.ProcessEnv = process.env): AppSettings 
     mmbcLiveEnabled: false,
     demoOrdersEnabled,
     databaseUrl,
-    databaseSsl: databaseSslValue === "true"
+    databaseSsl: databaseSslValue === "true",
+    googleIdentityPlatformProjectId
   };
 }

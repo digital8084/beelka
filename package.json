@@ -16,6 +16,7 @@
     "start": "node dist/apps/api/src/main.js"
   },
   "dependencies": {
+    "firebase-admin": "14.5.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {

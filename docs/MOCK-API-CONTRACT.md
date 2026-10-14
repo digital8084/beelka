@@ -148,7 +148,7 @@ Key reuse behavior:
 - Missing Idempotency-Key returns 400 IDEMPOTENCY_KEY_REQUIRED.
 - Missing X-Quote-Token returns 400 QUOTE_ACCESS_TOKEN_REQUIRED.
 
-The idempotency scope remains global to this unauthenticated demo surface. Before real customer flows, scope keys and quote ownership to an authenticated customer/tenant and apply authorization on every read/mutation.
+Idempotency is scoped to a hash of the verified customer's subject, and quote/order reads and mutations enforce owner scope in the PostgreSQL layer. These controls are tested in API and PostgreSQL integration tests.
 
 ## Environment guard
 
@@ -156,11 +156,11 @@ The idempotency scope remains global to this unauthenticated demo surface. Befor
 - `MMBC_LIVE_ENABLED` must remain false.
 - `PAYMENT_GATEWAY_MODE` must remain `simulation`.
 - `BEELKA_DEMO_ORDERS_ENABLED` defaults off when `NODE_ENV=production`.
-- Runtime startup rejects production with demo-order endpoints explicitly enabled until the unauthenticated demo mutation surface is removed/replaced with authenticated customer routes.
+- Runtime startup rejects production with demo-order endpoints explicitly enabled. The identity adapter does not make mock order mutations production-ready; those endpoints remain demo-only.
 
 ## Known limitations
 
 - Search remains read-only and does not automatically create quotes. The client must explicitly request a quote after reviewing a search result.
-- The `Authenticator` injection boundary is implemented, but no concrete identity-provider/session adapter is wired into the application entry point yet. Quote and order routes remain closed until a provider is selected and integrated. There is no login/signup/session issuance, rate limiter, customer UI, payment adapter, provider adapter or cloud deployment.
+- The Google Identity Platform adapter is wired in `main.ts` when `GOOGLE_CLOUD_PROJECT` (or `FIREBASE_PROJECT_ID`) is set and Google Application Default Credentials are available. It uses Firebase Admin SDK `verifyIdToken(token, true)`; invalid, expired, revoked, or disabled-user tokens are unauthenticated, while provider/credential failures return 503. Without the project ID, quote/order routes remain closed with `AUTHENTICATION_NOT_CONFIGURED`. There is no API-side login/signup/token issuance, customer UI, live payment adapter, live supplier adapter or cloud deployment.
 - Search fixtures use invented demo labels and fixed sample rates; they must never be presented as real availability or price.
-- Quote tokens are additional capability credentials, not a replacement for customer authentication. A customer identity-provider subject is used as the owner key; production still needs the actual provider adapter, provider-side price revalidation, session lifecycle/revocation, customer-scoped authorization tests, and service-specific contract confirmation.
+- Quote tokens are additional capability credentials, not a replacement for customer authentication. Production still requires real-project staging evidence, provider-side price revalidation, login/logout and account-recovery UX, rate limiting/abuse controls, privacy/retention review, and service-specific contract confirmation.

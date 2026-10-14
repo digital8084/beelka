@@ -12,6 +12,13 @@ import {
 } from "../../../packages/providers/src/mock-catalog.js";
 import { hashRequest, assertIdempotencyKey } from "../../../packages/domain/src/idempotency.js";
 
+export class AuthenticationProviderUnavailableError extends Error {
+  constructor() {
+    super("Authentication provider is temporarily unavailable");
+    this.name = "AuthenticationProviderUnavailableError";
+  }
+}
+
 export interface DatabaseProbe {
   query(sql: string): Promise<unknown>;
 }
@@ -377,6 +384,16 @@ async function handleRequest(
 export function createAppServer(dependencies: AppDependencies = {}): Server {
   return createServer((req, res) => {
     void handleRequest(req, res, dependencies).catch((error: unknown) => {
+      if (error instanceof AuthenticationProviderUnavailableError) {
+        errorResponse(
+          res,
+          503,
+          "AUTHENTICATION_PROVIDER_UNAVAILABLE",
+          "Penyedia autentikasi sementara tidak tersedia.",
+          res.getHeader("x-request-id")?.toString() ?? randomUUID()
+        );
+        return;
+      }
       if (error instanceof RequestInputError || error instanceof MockInputError) {
         errorResponse(res, error.statusCode, error.code, error.message, res.getHeader("x-request-id")?.toString() ?? randomUUID());
         return;

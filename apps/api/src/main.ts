@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import { createMockOrderFromQuote, createMockQuote, getMockOrder, getMockQuote } from "../../../packages/db/src/demo-orders.js";
 import { createAppServer } from "./server.js";
+import { createGoogleIdentityPlatformAuthenticator } from "./google-identity-platform.js";
 import { loadSettings } from "./settings.js";
 
 const settings = loadSettings();
@@ -24,7 +25,10 @@ const dependencies = {
         }
       }
     : {}),
-  demoOrdersEnabled: settings.demoOrdersEnabled
+  demoOrdersEnabled: settings.demoOrdersEnabled,
+  ...(settings.googleIdentityPlatformProjectId
+    ? { authenticate: createGoogleIdentityPlatformAuthenticator(settings.googleIdentityPlatformProjectId) }
+    : {})
 };
 
 const server = createAppServer(dependencies);
@@ -37,6 +41,7 @@ server.listen(settings.port, "0.0.0.0", () => {
       mode: settings.mode,
       databaseConfigured: Boolean(pool),
       demoOrdersEnabled: settings.demoOrdersEnabled,
+      customerAuthenticationConfigured: Boolean(settings.googleIdentityPlatformProjectId),
       liveTransactionsEnabled: false
     }) + "\n"
   );
