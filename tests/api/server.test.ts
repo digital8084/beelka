@@ -54,6 +54,10 @@ const orderFixture: MockOrderResponse = {
   createdAt: "2026-10-14T00:00:00.000Z"
 };
 
+function testAuth(subject = "customer:api-test"): Pick<AppDependencies, "authenticate"> {
+  return { authenticate: async () => ({ subject }) };
+}
+
 function mockDatabase(): DatabaseProbe {
   return { query: async () => ({ rows: [{ "?column?": 1 }] }) };
 }
@@ -238,7 +242,8 @@ test("quote creation returns a persisted mock quote and one-time bearer token", 
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -251,7 +256,8 @@ test("quote lookup requires the quote capability token", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -268,7 +274,8 @@ test("quote lookup succeeds only with the matching capability token", async () =
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -285,7 +292,8 @@ test("order creation requires a quote capability token", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -315,7 +323,8 @@ test("order creation requires idempotency even in mock mode", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -345,7 +354,8 @@ test("order creation confirms only a persisted quote and never trusts client pri
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
@@ -360,7 +370,8 @@ test("demo order lookup returns only the requested mock order", async () => {
   }, {
     database: mockDatabase(),
     mockOrderStore: mockOrderStore(),
-    demoOrdersEnabled: true
+    demoOrdersEnabled: true,
+    ...testAuth()
   });
 });
 
