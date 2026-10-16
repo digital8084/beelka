@@ -76,3 +76,15 @@ Do not declare production-ready until all of the following are recorded:
 - order ownership and idempotency regression tests on the Worker runtime;
 - backup/restore evidence and operational monitoring;
 - explicit approval to keep all supplier/payment mutations disabled until provider UAT is complete.
+
+## Cloudflare Git-connected build troubleshooting
+
+This repository's Worker configuration lives at the repository root. Configure the Cloudflare Git-connected build with:
+- Production branch: `phase-1/cloudflare-workers-foundation` while validating this pull request;
+- Root directory: repository root (shown as `/` in the dashboard);
+- Build command: `npm run build`;
+- Deploy command: `npm run worker:deploy` (or `npx wrangler deploy --config ./wrangler.jsonc`).
+
+Before retrying a failed deployment, inspect the commit SHA in the build metadata/log. The expected Worker branch head must contain both `wrangler.jsonc` and the `worker:deploy` npm script. If the build runs the base/main commit instead, do not keep retrying Wrangler or changing the config path: fix the Git-connected deployment's selected commit/branch or repository integration first. The error `ENOENT ... wrangler.jsonc` means Wrangler cannot see the config file in the checked-out workspace; changing from relative to absolute paths does not fix a missing file.
+
+The Cloudflare service is named `beelka`, so the Wrangler `name` is kept as `beelka` to avoid dashboard/config drift. Keep provider/payment simulation flags enabled while testing. Do not attach a database binding or enable write routes until the dedicated Beelka Supabase project and identity adapter are ready.
