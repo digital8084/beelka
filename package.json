@@ -15,7 +15,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "start": "node dist/apps/api/src/main.js",
     "worker:dev": "npx wrangler dev --config wrangler.jsonc",
-    "worker:deploy": "npx wrangler deploy --config wrangler.jsonc"
+    "worker:deploy": "npx wrangler deploy --config wrangler.jsonc",
+    "worker:check": "npx --yes wrangler@latest deploy --dry-run --config wrangler.jsonc"
   },
   "dependencies": {
     "firebase-admin": "14.5.0",
