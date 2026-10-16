@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "beelka",
+  "main": "apps/api/src/worker.ts",
+  "compatibility_date": "2026-10-16",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "enable_nodejs_http_server_modules"
+  ],
+  "vars": {
+    "BEELKA_MODE": "simulation",
+    "PAYMENT_GATEWAY_MODE": "simulation",
+    "MMBC_LIVE_ENABLED": "false",
+    "BEELKA_DEMO_ORDERS_ENABLED": "false"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

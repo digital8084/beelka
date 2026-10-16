@@ -1,11 +1,11 @@
 # Beelka — Architecture Blueprint
 
-- Status: proposed architecture
+- Status: Cloudflare Workers migration scaffold added; production readiness remains blocked on credentials, database provisioning and staging verification
 - Architecture style: modular monolith with isolated provider adapters
-- Runtime: Node.js LTS + TypeScript
-- Customer UI: React / Next.js (recommendation; final choice is an ADR)
-- Database: PostgreSQL
-- Deployment: cloud platform with managed database and secret store
+- Runtime: Cloudflare Workers using the Node.js compatibility layer for the existing HTTP API; compatibility must be validated in CI and staging
+- Customer UI: not yet implemented; select a Workers-compatible frontend after ADR-001
+- Database: dedicated Supabase PostgreSQL, accessed from Workers through Cloudflare Hyperdrive where available
+- Deployment: Cloudflare Workers with environment-scoped secrets and a managed PostgreSQL database
 - Provider integrations: MMBC flight, hotel, rail/KAI and PPOB
 - Payment: provider-neutral gateway abstraction; provider not yet selected
 
