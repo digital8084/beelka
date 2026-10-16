@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "beelka-api",
+  "name": "beelka",
   "main": "apps/api/src/worker.ts",
   "compatibility_date": "2026-10-16",
   "compatibility_flags": [
