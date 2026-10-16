@@ -88,3 +88,13 @@ This repository's Worker configuration lives at the repository root. Configure t
 Before retrying a failed deployment, inspect the commit SHA in the build metadata/log. The expected Worker branch head must contain both `wrangler.jsonc` and the `worker:deploy` npm script. If the build runs the base/main commit instead, do not keep retrying Wrangler or changing the config path: fix the Git-connected deployment's selected commit/branch or repository integration first. The error `ENOENT ... wrangler.jsonc` means Wrangler cannot see the config file in the checked-out workspace; changing from relative to absolute paths does not fix a missing file.
 
 The Cloudflare service is named `beelka`, so the Wrangler `name` is kept as `beelka` to avoid dashboard/config drift. Keep provider/payment simulation flags enabled while testing. Do not attach a database binding or enable write routes until the dedicated Beelka Supabase project and identity adapter are ready.
+
+## Automated production deployment through GitHub Actions
+
+The repository now includes `.github/workflows/deploy-cloudflare.yml`. It deploys only on pushes to `main` (or a manual dispatch targeting `main`), after a clean install, TypeScript build, and Wrangler dry-run. It does not deploy feature branches or pull requests to production.
+
+Before this workflow can deploy, configure these repository/environment secrets in GitHub under the `production` environment:
+- `CLOUDFLARE_API_TOKEN`: scoped to the intended account with Workers Scripts edit/deploy permissions (and any permissions required by the chosen deployment configuration).
+- `CLOUDFLARE_ACCOUNT_ID`: the intended Cloudflare account ID.
+
+Never put tokens in source code, Wrangler vars, or logs. The workflow intentionally fails early with a clear error if either secret is missing. It uses the exact commit SHA from the triggering push. Keep Cloudflare's separate Git-connected build/deploy command disabled or clearly designated as the single deployment path to avoid duplicate/conflicting deployments. Do not merge this PR until CI passes and the production environment secrets have been reviewed. Since the dedicated Beelka database and Worker identity adapter are not ready, the simulation flags and disabled quote/order writes must remain unchanged.
