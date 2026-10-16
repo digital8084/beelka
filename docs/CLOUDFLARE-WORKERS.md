@@ -44,8 +44,6 @@ npm run worker:dev
 npm run worker:deploy
 ```
 
-The current repository does not include Cloudflare credentials or a configured Cloudflare account binding in this change, so it cannot be deployed from GitHub alone yet.
-
 ## Runtime compatibility review
 
 The existing API uses:
@@ -56,7 +54,7 @@ The existing API uses:
 
 Cloudflare documents a Node HTTP server bridge via `cloudflare:node`, and PostgreSQL access via TCP sockets/Hyperdrive. The Worker entrypoint therefore reuses the existing HTTP router and `pg` package, but uses a bounded pool per isolate. Compatibility must be verified in Wrangler and staging, especially TLS, query behavior, database connection pressure, and request body handling.
 
-Firebase Admin's Application Default Credentials flow is not wired into this Worker entrypoint yet. Authentication is deliberately absent/fail-closed; order creation remains disabled. Do not enable quote/order writes until a verified identity implementation is available and tested against a non-production Google Identity Platform project.
+Firebase Admin's Application Default Credentials flow is not wired into this Worker entrypoint. The Node runtime's Google Identity Platform authenticator relies on Firebase Admin and `applicationDefault()`, which is not a drop-in Worker-compatible identity adapter. The Worker therefore does not pass an `authenticate` dependency, and quote/order routes remain fail-closed. Do not enable those routes until a separately tested Worker-compatible identity implementation validates signature, issuer, audience, expiry, and revocation/disabled-user requirements.
 
 ## Supabase provisioning blocker
 
@@ -79,22 +77,18 @@ Do not declare production-ready until all of the following are recorded:
 
 ## Cloudflare Git-connected build troubleshooting
 
-This repository's Worker configuration lives at the repository root. Configure the Cloudflare Git-connected build with:
-- Production branch: `phase-1/cloudflare-workers-foundation` while validating this pull request;
-- Root directory: repository root (shown as `/` in the dashboard);
-- Build command: `npm run build`;
-- Deploy command: `npm run worker:deploy` (or `npx wrangler deploy --config ./wrangler.jsonc`).
+This repository's Worker configuration lives at the repository root. The Git-connected deployment should use the expected branch/commit only for preview validation, with root directory set to the repository root (shown as `/`). Build command: `npm run build`; deploy command: `npm run worker:deploy` (or `npx wrangler deploy --config ./wrangler.jsonc`).
 
-Before retrying a failed deployment, inspect the commit SHA in the build metadata/log. The expected Worker branch head must contain both `wrangler.jsonc` and the `worker:deploy` npm script. If the build runs the base/main commit instead, do not keep retrying Wrangler or changing the config path: fix the Git-connected deployment's selected commit/branch or repository integration first. The error `ENOENT ... wrangler.jsonc` means Wrangler cannot see the config file in the checked-out workspace; changing from relative to absolute paths does not fix a missing file.
+Before retrying a failed deployment, inspect the commit SHA in build metadata/log. The expected Worker branch head must contain both `wrangler.jsonc` and the `worker:deploy` npm script. If the build checks out the base/main commit instead, fix the selected commit/branch or repository integration. The error `ENOENT ... wrangler.jsonc` means Wrangler cannot see the config file in the checked-out workspace; changing relative to absolute paths does not fix a missing file.
 
-The Cloudflare service is named `beelka`, so the Wrangler `name` is kept as `beelka` to avoid dashboard/config drift. Keep provider/payment simulation flags enabled while testing. Do not attach a database binding or enable write routes until the dedicated Beelka Supabase project and identity adapter are ready.
+The Cloudflare service is named `beelka`. Keep simulation flags and disabled quote/order writes unchanged until the dedicated database and identity adapter are ready.
 
 ## Automated production deployment through GitHub Actions
 
-The repository now includes `.github/workflows/deploy-cloudflare.yml`. It deploys only on pushes to `main` (or a manual dispatch targeting `main`), after a clean install, TypeScript build, and Wrangler dry-run. It does not deploy feature branches or pull requests to production.
+The repository includes `.github/workflows/deploy-cloudflare.yml`. Its validation job runs on main after clean install, TypeScript build, and Wrangler dry-run. Its production deploy job is additionally gated by the GitHub Environment variable `BEELKA_PRODUCTION_RELEASE_APPROVED=true` in environment `production`. This deliberate guard prevents a merge from accidentally deploying the incomplete database/authentication scaffold to production.
 
-Before this workflow can deploy, configure these repository/environment secrets in GitHub under the `production` environment:
-- `CLOUDFLARE_API_TOKEN`: scoped to the intended account with Workers Scripts edit/deploy permissions (and any permissions required by the chosen deployment configuration).
+Before enabling that variable, complete the release gates above and confirm these environment secrets exist in GitHub `production`:
+- `CLOUDFLARE_API_TOKEN`: scoped to the intended account with Workers Scripts edit/deploy permissions.
 - `CLOUDFLARE_ACCOUNT_ID`: the intended Cloudflare account ID.
 
-Never put tokens in source code, Wrangler vars, or logs. The workflow intentionally fails early with a clear error if either secret is missing. It uses the exact commit SHA from the triggering push. Keep Cloudflare's separate Git-connected build/deploy command disabled or clearly designated as the single deployment path to avoid duplicate/conflicting deployments. Do not merge this PR until CI passes and the production environment secrets have been reviewed. Since the dedicated Beelka database and Worker identity adapter are not ready, the simulation flags and disabled quote/order writes must remain unchanged.
+Never put tokens in source code, Wrangler vars, or logs. Keep Cloudflare's separate Git-connected deploy clearly designated or disabled to avoid duplicate deployments. The deployment workflow checks the exact triggering SHA. Since the dedicated Beelka database and Worker identity adapter are not ready, keep the production approval variable unset, simulation flags enabled, and quote/order writes disabled.
