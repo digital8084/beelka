@@ -69,5 +69,7 @@ jobs:
         run: npm run typecheck
       - name: Build
         run: npm run build
+      - name: Verify Cloudflare Workers bundle
+        run: npm run worker:check
       - name: Verify migrations are immutable and idempotent as migration role
         run: npm run db:migrate
