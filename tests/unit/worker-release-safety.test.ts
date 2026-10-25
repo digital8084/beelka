@@ -42,7 +42,7 @@ test("production deployment requires explicit release approval and production en
 
 test("Worker validation is a dry run and does not itself deploy", () => {
   assert.match(deployWorkflow, /npm run worker:check/);
-  assert.match(deployWorkflow, /wrangler@4\\.152\\.0 deploy/);
+  assert.match(deployWorkflow, /wrangler@4\.152\.0 deploy/);
   assert.doesNotMatch(deployWorkflow, /wrangler@latest/);
   assert.match(deployWorkflow, /name:\s*Validate Worker bundle/);
   assert.match(deployWorkflow, /name:\s*Deploy Cloudflare Worker \(explicit release gate\)/);
