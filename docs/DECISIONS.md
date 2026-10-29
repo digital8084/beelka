@@ -1,6 +1,6 @@
 # Beelka — Decision Log
 
-Date: 2026-10-14
+Date: 2026-10-29
 
 ## Accepted baseline
 
@@ -40,6 +40,14 @@ Decision: use PostgreSQL uniqueness constraints for idempotency, append-only ord
 
 Reason: booking, issue and bill-payment mutations have financial/customer impact; blind retries can duplicate charges or bookings.
 
+### ADR-001: React + Next.js public web
+
+Status: accepted for Phase 2 implementation on 2026-10-29. See [ADR-001 web framework](ADR-001-WEB-FRAMEWORK.md).
+
+Decision: implement the customer web app in `apps/web/` using React, Next.js App Router and TypeScript. Keep the Node.js API as the authoritative business API and PostgreSQL boundary. The existing static HTML prototype remains a simulation-only visual reference.
+
+Constraints: no provider/payment secrets in client bundles; no duplicate business logic in the web app; no real transactions in the UI shell; deterministic simulation fixtures and browser E2E are required.
+
 ### ADR-004: Google Identity Platform for customer identity
 
 Status: accepted on 2026-10-14.
@@ -57,7 +65,6 @@ Consequences and remaining work:
 
 ## Pending decisions
 
-- ADR-001: exact workspace structure and web framework.
 - ADR-002: payment gateway, methods, onboarding and refund support.
 - ADR-003: cloud provider/region, runtime topology and operational cost.
 - ADR-004 follow-up: customer UI framework-independent session lifecycle, logout and account recovery policy.
