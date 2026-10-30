@@ -8,6 +8,17 @@ const html = await readFile(
   "utf8",
 );
 
+function extractInlineScript(source) {
+  const normalized = source.toLowerCase();
+  const openingTag = normalized.indexOf("<script");
+  if (openingTag < 0) return undefined;
+  const contentStart = normalized.indexOf(">", openingTag);
+  if (contentStart < 0) return undefined;
+  const contentEnd = normalized.indexOf("</script", contentStart + 1);
+  if (contentEnd < 0) return undefined;
+  return source.slice(contentStart + 1, contentEnd);
+}
+
 test("customer prototype declares Indonesian language and responsive viewport", () => {
   assert.match(html, /<html lang="id">/);
   assert.match(html, /name="viewport"[^>]*width=device-width/);
@@ -47,9 +58,7 @@ test("dynamic fields are labelled and submission stays local to the prototype", 
 
 
 test("flight, hotel, and train form field names match the mock API contract", () => {
-  const scriptStart = html.indexOf("<script>") + "<script>".length;
-  const scriptEnd = html.indexOf("</script>", scriptStart);
-  const script = scriptEnd >= 0 ? html.slice(scriptStart, scriptEnd) : "";
+  const script = extractInlineScript(html);
   assert.ok(script, "inline prototype script exists");
   assert.match(script, /departureDate/);
   assert.match(script, /checkIn/);
@@ -63,4 +72,12 @@ test("flight, hotel, and train form field names match the mock API contract", ()
 
 test("hotel search requires a city or area before submission", () => {
   assert.match(html, /\["origin","destination","city","customer"\]\.includes\(id\)/);
+});
+
+test("inline script extraction handles mixed-case tags and script attributes", () => {
+  assert.equal(
+    extractInlineScript('<HTML><SCRIPT type="text/javascript">const safe = true;</SCRIPT></HTML>'),
+    "const safe = true;",
+  );
+  assert.equal(extractInlineScript("<html><body>no script</body></html>"), undefined);
 });
