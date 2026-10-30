@@ -44,3 +44,17 @@ test("dynamic fields are labelled and submission stays local to the prototype", 
   assert.match(html, /form\.reportValidity\(\)/);
   assert.match(html, /notice\.classList\.add\("show"\)/);
 });
+
+
+test("flight, hotel, and train form field names match the mock API contract", () => {
+  const script = html.match(/<script>([\\s\\S]*?)<\\/script>/)?.[1];
+  assert.ok(script, "inline prototype script exists");
+  assert.match(script, /departureDate/);
+  assert.match(script, /checkIn/);
+  assert.match(script, /checkOut/);
+  assert.match(script, /city/);
+  assert.match(script, /rooms/);
+  assert.match(script, /travelDate/);
+  assert.match(script, /adults/);
+  assert.doesNotMatch(script, /"checkin"|"checkout"|"passengers"/);
+});
