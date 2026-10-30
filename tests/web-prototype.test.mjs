@@ -60,3 +60,7 @@ test("flight, hotel, and train form field names match the mock API contract", ()
   assert.match(script, /adults/);
   assert.doesNotMatch(script, /"checkin"|"checkout"|"passengers"/);
 });
+
+test("hotel search requires a city or area before submission", () => {
+  assert.match(html, /\["origin","destination","city","customer"\]\.includes\(id\)/);
+});
