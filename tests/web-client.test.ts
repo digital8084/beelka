@@ -108,3 +108,49 @@ test("PPOB catalog rejects purchasable products", async () => {
     (error: unknown) => error instanceof BeelkaApiError && error.code === "UNSAFE_CATALOG_CONTRACT",
   );
 });
+
+
+test("client rejects malformed result entries without throwing a raw TypeError", async () => {
+  for (const malformed of [null, "not-an-object", 42]) {
+    const client = createBeelkaApiClient({
+      baseUrl: "https://api.example.test",
+      fetcher: async () => ok({
+        mode: "mock", requestId: "request-12345678", results: [malformed],
+      }),
+    });
+    await assert.rejects(
+      () => client.searchFlights({
+        origin: "CGK", destination: "DPS", departureDate: "2026-12-01", adults: 1,
+      }),
+      (error: unknown) => error instanceof BeelkaApiError
+        && error.status === 502
+        && error.code === "UNSAFE_RESULT_CONTRACT",
+    );
+  }
+});
+
+test("client rejects malformed PPOB entries and empty request identifiers", async () => {
+  const malformedCatalog = createBeelkaApiClient({
+    baseUrl: "https://api.example.test",
+    fetcher: async () => ok({
+      mode: "mock", requestId: "request-12345678", products: [null],
+    }),
+  });
+  await assert.rejects(
+    () => malformedCatalog.getPpobProducts(),
+    (error: unknown) => error instanceof BeelkaApiError
+      && error.code === "UNSAFE_CATALOG_CONTRACT",
+  );
+
+  const missingCorrelation = createBeelkaApiClient({
+    baseUrl: "https://api.example.test",
+    fetcher: async () => ok({ mode: "mock", requestId: "  ", results: [] }),
+  });
+  await assert.rejects(
+    () => missingCorrelation.searchFlights({
+      origin: "CGK", destination: "DPS", departureDate: "2026-12-01", adults: 1,
+    }),
+    (error: unknown) => error instanceof BeelkaApiError
+      && error.code === "INVALID_SIMULATION_CONTRACT",
+  );
+});
