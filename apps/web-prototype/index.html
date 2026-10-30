@@ -80,9 +80,9 @@
   <footer id="tentang" class="wrap"><span>© Beelka · Semua kebutuhan, satu tempat.</span><span>Prototipe UI · Data simulasi · Tidak untuk transaksi nyata</span></footer>
   <script>
     const serviceMeta = {
-      flights: { title: "Cari tiket pesawat", fields: [["origin","Kota asal","Jakarta","text"],["destination","Kota tujuan","Denpasar","text"],["date","Tanggal berangkat","","date"],["passengers","Penumpang","1 dewasa","select"]] },
-      hotels: { title: "Temukan tempat menginap", fields: [["destination","Kota / area","Bandung","text"],["checkin","Check-in","","date"],["checkout","Check-out","","date"],["guests","Tamu","2 tamu","select"]] },
-      trains: { title: "Cari perjalanan kereta", fields: [["origin","Stasiun asal","Gambir","text"],["destination","Stasiun tujuan","Yogyakarta","text"],["date","Tanggal berangkat","","date"],["passengers","Penumpang","1 dewasa","select"]] },
+      flights: { title: "Cari tiket pesawat", fields: [["origin","Kota asal","Jakarta","text"],["destination","Kota tujuan","Denpasar","text"],["departureDate","Tanggal berangkat","","date"],["adults","Penumpang dewasa","1 dewasa","select"]] },
+      hotels: { title: "Temukan tempat menginap", fields: [["city","Kota / area","Bandung","text"],["checkIn","Check-in","","date"],["checkOut","Check-out","","date"],["rooms","Jumlah kamar","1 kamar","select"],["guests","Jumlah tamu","2 tamu","select"]] },
+      trains: { title: "Cari perjalanan kereta", fields: [["origin","Stasiun asal","Gambir","text"],["destination","Stasiun tujuan","Yogyakarta","text"],["travelDate","Tanggal berangkat","","date"],["adults","Penumpang dewasa","1 dewasa","select"]] },
       ppob: { title: "Produk digital & tagihan", fields: [["category","Jenis produk","Pilih produk","select"],["customer","Nomor pelanggan","Masukkan nomor pelanggan","text"],["provider","Operator / penyedia","Pilih penyedia","text"],["amount","Nominal (opsional)","Contoh: 50000","number"]] }
     };
     const fieldWrap = document.getElementById("fields");
@@ -102,10 +102,11 @@
         let input;
         if (type === "select") {
           input = document.createElement("select");
-          const choices = id === "passengers" ? ["1 dewasa","2 dewasa","3 dewasa","4 dewasa"] :
-            id === "guests" ? ["1 tamu","2 tamu","3 tamu","4 tamu"] :
+          const choices = id === "adults" ? ["1","2","3","4"] :
+            id === "rooms" ? ["1","2","3","4"] :
+            id === "guests" ? ["1","2","3","4"] :
             ["Pilih produk","Pulsa","Paket data","Token listrik","Tagihan air","Internet & TV"];
-          for (const choice of choices) { const option = document.createElement("option"); option.textContent = choice; input.append(option); }
+          for (const choice of choices) { const option = document.createElement("option"); option.value = choice; option.textContent = id === "category" ? choice : (id === "adults" ? choice + " dewasa" : id === "rooms" ? choice + " kamar" : id === "guests" ? choice + " tamu" : choice); input.append(option); }
           if (id === "category") input.required = true;
         } else {
           input = document.createElement("input"); input.type = type; input.placeholder = placeholder;
