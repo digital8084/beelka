@@ -83,7 +83,12 @@ async function requestJson<T>(
     );
   }
 
-  if (!isRecord(payload) || payload.mode !== "mock" || typeof payload.requestId !== "string") {
+  if (
+    !isRecord(payload)
+    || payload.mode !== "mock"
+    || typeof payload.requestId !== "string"
+    || payload.requestId.trim().length === 0
+  ) {
     throw new BeelkaApiError("Kontrak respons Beelka tidak sesuai atau bukan mode simulasi.", response.status, "INVALID_SIMULATION_CONTRACT");
   }
   return payload as T;
@@ -107,7 +112,10 @@ export function createBeelkaApiClient(options: { baseUrl: string; fetcher?: Fetc
       },
       fetcher,
     );
-    if (!Array.isArray(payload.results) || payload.results.some((item) => item.bookable !== false)) {
+    if (
+      !Array.isArray(payload.results)
+      || payload.results.some((item: unknown) => !isRecord(item) || item.bookable !== false)
+    ) {
       throw new BeelkaApiError("Hasil pencarian tidak memenuhi kontrak simulasi non-bookable.", 502, "UNSAFE_RESULT_CONTRACT", payload.requestId);
     }
     return payload;
@@ -124,7 +132,10 @@ export function createBeelkaApiClient(options: { baseUrl: string; fetcher?: Fetc
         { method: "GET" },
         fetcher,
       );
-      if (!Array.isArray(payload.products) || payload.products.some((item) => item.purchasable !== false)) {
+      if (
+        !Array.isArray(payload.products)
+        || payload.products.some((item: unknown) => !isRecord(item) || item.purchasable !== false)
+      ) {
         throw new BeelkaApiError("Katalog PPOB tidak memenuhi kontrak simulasi non-purchasable.", 502, "UNSAFE_CATALOG_CONTRACT", payload.requestId);
       }
       return payload;
