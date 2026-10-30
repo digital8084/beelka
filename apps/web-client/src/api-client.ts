@@ -18,8 +18,9 @@ export type HotelSearchInput = {
 export type TrainSearchInput = {
   origin: string;
   destination: string;
-  departureDate: string;
-  passengers: number;
+  travelDate: string;
+  adults: number;
+  infants?: number;
 };
 
 export type MockSearchResponse = {
@@ -60,10 +61,7 @@ async function requestJson<T>(
 ): Promise<T> {
   const response = await fetcher(new URL(path, baseUrl), {
     ...init,
-    headers: {
-      accept: "application/json",
-      ...init.headers,
-    },
+    headers: { accept: "application/json", ...init.headers },
     cache: "no-store",
   });
 
@@ -91,10 +89,7 @@ async function requestJson<T>(
   return payload as T;
 }
 
-export function createBeelkaApiClient(options: {
-  baseUrl: string;
-  fetcher?: FetchLike;
-}) {
+export function createBeelkaApiClient(options: { baseUrl: string; fetcher?: FetchLike }) {
   const baseUrl = options.baseUrl.endsWith("/") ? options.baseUrl : options.baseUrl + "/";
   const fetcher = options.fetcher ?? fetch;
 
