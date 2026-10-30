@@ -111,7 +111,7 @@
         } else {
           input = document.createElement("input"); input.type = type; input.placeholder = placeholder;
           if (type === "date") input.required = true;
-          if (["origin","destination","customer"].includes(id)) input.required = true;
+          if (["origin","destination","city","customer"].includes(id)) input.required = true;
           if (id === "amount") { input.min = "0"; input.step = "1000"; }
         }
         input.id = id; input.name = id; wrap.append(input); fieldWrap.append(wrap);
