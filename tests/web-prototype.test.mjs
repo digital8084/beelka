@@ -40,7 +40,7 @@ test("prototype labels simulation and explicitly denies real transactions", () =
   assert.match(html, /MODE SIMULASI|simulasi/i);
   assert.match(html, /tidak ada transaksi yang dibuat/i);
   assert.match(html, /Tidak untuk transaksi nyata/i);
-  assert.doesNotMatch(html, /fetch\\s*\\(|XMLHttpRequest|WebSocket\\s*\\(/);
+  assert.doesNotMatch(html, /fetch\s*\(|XMLHttpRequest|WebSocket\s*\(/);
 });
 
 test("prototype inline JavaScript parses without syntax errors", () => {
@@ -50,10 +50,10 @@ test("prototype inline JavaScript parses without syntax errors", () => {
 });
 
 test("dynamic fields are labelled and submission stays local to the prototype", () => {
-  assert.match(html, /lab\\.htmlFor = id/);
-  assert.match(html, /event\\.preventDefault\\(\\)/);
-  assert.match(html, /form\\.reportValidity\\(\\)/);
-  assert.match(html, /notice\\.classList\\.add\\("show"\\)/);
+  assert.match(html, /lab\.htmlFor = id/);
+  assert.match(html, /event\.preventDefault\(\)/);
+  assert.match(html, /form\.reportValidity\(\)/);
+  assert.match(html, /notice\.classList\.add\("show"\)/);
 });
 
 test("flight, hotel, and train form field names match the mock API contract", () => {
@@ -70,7 +70,7 @@ test("flight, hotel, and train form field names match the mock API contract", ()
 });
 
 test("hotel search requires a city or area before submission", () => {
-  assert.match(html, /\\["origin","destination","city","customer"\\]\\.includes\\(id\\)/);
+  assert.match(html, /\["origin","destination","city","customer"\]\.includes\(id\)/);
 });
 
 test("inline script extraction handles mixed-case tags and script attributes", () => {
